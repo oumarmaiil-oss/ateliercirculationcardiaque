@@ -685,6 +685,16 @@ export default function App() {
     let chartVisible = true;
     let pvVisible = true;
     const governor = createGovernor();
+    // Compteur d'images optionnel (?perf dans l'adresse) pour diagnostiquer la fluidité.
+    let perfEl: HTMLDivElement | null = null;
+    let perfFrames = 0;
+    let perfT0 = performance.now();
+    if (new URLSearchParams(window.location.search).has('perf')) {
+      perfEl = document.createElement('div');
+      perfEl.style.cssText =
+        'position:fixed;right:8px;bottom:8px;z-index:9999;padding:4px 8px;border-radius:6px;background:#000c;color:#4ade80;font:600 12px ui-monospace,monospace;pointer-events:none';
+      document.body.appendChild(perfEl);
+    }
 
     const frame = (ts: number) => {
       const rawDtMs = ts - prevTs;
@@ -878,7 +888,7 @@ export default function App() {
 
       // Sync timeline scrubber & compact telemetry DOM without React re-renders
       uiSyncAccum += realDt;
-      if (uiSyncAccum >= 0.08) {
+      if (uiSyncAccum >= 0.2) {
         uiSyncAccum = 0;
         const info = tlInfo(clk, r);
         if (tlInputRef.current) {
@@ -895,11 +905,22 @@ export default function App() {
         }
       }
 
+      if (perfEl) {
+        perfFrames++;
+        if (ts - perfT0 >= 1000) {
+          perfEl.textContent = `${Math.round((perfFrames * 1000) / (ts - perfT0))} i/s · ${profileRef.current}`;
+          perfFrames = 0;
+          perfT0 = ts;
+        }
+      }
       rafId = requestAnimationFrame(frame);
     };
 
     rafId = requestAnimationFrame(frame);
-    return () => cancelAnimationFrame(rafId);
+    return () => {
+      cancelAnimationFrame(rafId);
+      perfEl?.remove();
+    };
   }, []);
 
   // Handlers
@@ -2055,7 +2076,7 @@ export default function App() {
               )}
 
               {/* Sidebar Collapse Toggle + 3D Heart mode bar */}
-              <div className="absolute left-3 top-3 z-10 flex flex-wrap items-center gap-1.5">
+              <div className="absolute left-2 top-2 z-10 flex max-w-[calc(100%-104px)] flex-wrap items-center gap-1.5 sm:left-3 sm:top-3 sm:max-w-[calc(100%-130px)]">
                 <button
                   type="button"
                   onClick={() => setSidebarOpen((v) => !v)}
@@ -2074,22 +2095,24 @@ export default function App() {
                   <div className="flex flex-wrap items-center gap-1 rounded-lg border border-[var(--line2)] bg-[#090e1c]/95 p-1">
                     {(
                       [
-                        { id: 'exterieur', lbl: 'Extérieur' },
-                        { id: 'coupe', lbl: 'Coupe' },
-                        { id: 'transparent', lbl: 'Transparent' },
-                      ] as { id: Heart3DMode; lbl: string }[]
+                        { id: 'exterieur', lbl: 'Extérieur', court: 'Ext.' },
+                        { id: 'coupe', lbl: 'Coupe', court: 'Coupe' },
+                        { id: 'transparent', lbl: 'Transparent', court: 'Transp.' },
+                      ] as { id: Heart3DMode; lbl: string; court: string }[]
                     ).map((m) => (
                       <button
                         key={m.id}
                         type="button"
                         onClick={() => setHeart3dMode(m.id)}
-                        className={`rounded-md px-2.5 py-1 text-[11px] font-semibold transition ${
+                        title={m.lbl}
+                        className={`rounded-md px-2 py-1 text-[11px] font-semibold transition sm:px-2.5 ${
                           heart3dMode === m.id
                             ? 'bg-[var(--accent)] text-slate-950'
                             : 'text-[var(--muted)] hover:text-[var(--txt)]'
                         }`}
                       >
-                        {m.lbl}
+                        <span className="sm:hidden">{m.court}</span>
+                        <span className="hidden sm:inline">{m.lbl}</span>
                       </button>
                     ))}
                     <button
@@ -2097,9 +2120,11 @@ export default function App() {
                       onClick={() =>
                         heart3dInstRef.current?.viewport.setView([0.3, 0.25, 6.2], [0, 0.05, 0])
                       }
+                      title="Recentrer la vue"
                       className="rounded-md px-2 py-1 text-[11px] font-medium text-[var(--muted)] hover:text-[var(--txt)]"
                     >
-                      Recentrer
+                      <RotateCcw className="h-3.5 w-3.5 sm:hidden" aria-label="Recentrer" />
+                      <span className="hidden sm:inline">Recentrer</span>
                     </button>
                   </div>
                 )}
@@ -2117,7 +2142,7 @@ export default function App() {
 
               {/* Quick-Action Floating Popover on clicked heart part */}
               {tab === 'coeur' && quickCompId && COMP[quickCompId] && (
-                <div className="absolute bottom-3 left-3 z-20 w-[min(320px,calc(100%-24px))] rounded-xl border border-sky-400/50 bg-[#090e1c]/95 p-3 shadow-2xl">
+                <div className="absolute bottom-2 left-2 right-2 z-20 rounded-xl border border-sky-400/50 bg-[#090e1c]/95 p-2 shadow-2xl sm:bottom-3 sm:left-3 sm:right-auto sm:w-[min(320px,calc(100%-24px))] sm:p-3">
                   <div className="flex items-start justify-between gap-2">
                     <div>
                       <div className="text-[10px] font-bold uppercase tracking-wider text-sky-300">
@@ -2137,7 +2162,7 @@ export default function App() {
                     </button>
                   </div>
 
-                  <div className="mt-1.5 text-[11px] text-[var(--muted)] leading-snug">
+                  <div className="mt-1.5 hidden text-[11px] text-[var(--muted)] leading-snug sm:block">
                     {nowHTML(quickCompId, clkRef.current, effectiveParams, computed).vals.join(' · ')}
                   </div>
 
