@@ -1,3 +1,4 @@
+import { dpr2d } from '../engine/perf';
 import { clamp, fmt } from '../engine/geometry2d';
 import {
   beat,
@@ -14,14 +15,18 @@ export function hiDPI(
   w: number,
   h: number
 ): CanvasRenderingContext2D | null {
-  const dpr = Math.min(2, window.devicePixelRatio || 1);
-  if (cv.width !== w * dpr || cv.height !== h * dpr) {
-    cv.width = w * dpr;
-    cv.height = h * dpr;
+  const dpr = dpr2d();
+  // Arrondi : avec un écran à 125 % (dpr 1,25), w * dpr n'est pas entier et la
+  // comparaison réallouait le canevas à chaque image.
+  const pw = Math.round(w * dpr);
+  const ph = Math.round(h * dpr);
+  if (cv.width !== pw || cv.height !== ph) {
+    cv.width = pw;
+    cv.height = ph;
   }
   const c = cv.getContext('2d');
   if (!c) return null;
-  c.setTransform(dpr, 0, 0, dpr, 0, 0);
+  c.setTransform(pw / w, 0, 0, ph / h, 0, 0);
   return c;
 }
 
