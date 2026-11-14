@@ -112,14 +112,14 @@ test('Timeline des conséquences projette aggravation non traitée et stabilisat
     asso: 'peri-inda-amlo',
     pres: { 'peri-inda-amlo': '10-2.5-10' },
   });
-  const projUntreated5y = projectTimelineState(solved.params, solved.d.hvg, c2, 3, 'untreated');
-  const projTreated5y = projectTimelineState(solved.params, solved.d.hvg, c2, 3, 'treated');
+  const projUntreated5y = projectTimelineState(solved.params, solved.d.hvg, c2, 4, 'untreated');
+  const projTreated5y = projectTimelineState(solved.params, solved.d.hvg, c2, 4, 'treated');
   assert.ok(projUntreated5y.d.hvg > projTreated5y.d.hvg + 0.3, 'HVG non traitée à 5 ans doit être nettement plus élevée');
   assert.equal(projUntreated5y.severite, 'crit');
   assert.equal(projTreated5y.severite, 'ok');
 
   const c5 = CLINICAL_CASES.find((c) => c.id === 'fa-rapide')!;
   const faBase = applyPresetToParams(c5.preset);
-  const faUntreated5y = projectTimelineState(faBase.params, faBase.d.hvg, c5, 3, 'untreated');
+  const faUntreated5y = projectTimelineState(faBase.params, faBase.d.hvg, c5, 4, 'untreated');
   assert.equal(faUntreated5y.params.mal.avc, true, 'FA non anticoagulée à 5 ans expose à un AVC');
 });

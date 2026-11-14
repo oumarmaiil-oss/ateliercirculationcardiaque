@@ -497,7 +497,7 @@ export const EXPL: Record<
       'L’artère interventriculaire antérieure (IVA) est bouchée par un caillot : la paroi antérieure et la pointe, privées d’oxygène, deviennent grises et ne se contractent plus. À l’ECG : sus-décalage du segment ST.',
     vaisseau:
       'L’infarctus commence presque toujours ici : une plaque coronaire à chape fine se rompt, un caillot se forme et bouche l’artère (étape 6).',
-    why: 'Le muscle cardiaque ne tient que quelques dizaines de minutes sans oxygène : chaque minute compte, et la désobstruction rapide de l’artère (angioplastie ou thrombolyse) sauve du muscle. Le traitement d’urgence de l’infarctus n’est pas simulé ici.',
+    why: 'Le muscle cardiaque ne tient que quelques dizaines de minutes sans oxygène : chaque minute compte, et la désobstruction rapide de l’artère (angioplastie ou thrombolyse) sauve du muscle. En prévention secondaire, la quadrithérapie ci-dessous (antiagrégant + statine forte + IEC + bêtabloquant) stabilise la plaque et protège le VG.',
   },
   ic: {
     t: 'Insuffisance cardiaque',

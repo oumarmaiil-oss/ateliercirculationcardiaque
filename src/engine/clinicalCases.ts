@@ -1,5 +1,5 @@
 import { clamp, fmt } from './geometry2d';
-import { activeTrt, applyPresetToParams, compute, TRT_IDS } from './physiology';
+import { activeTrt, applyPresetToParams, compute, freshP, TRT_IDS } from './physiology';
 import type {
   ComputedResult,
   DynamicState,
@@ -64,10 +64,11 @@ export interface TimelineProjection {
 }
 
 export const TIMELINE_LABELS: { step: TimelineHorizon; short: string; full: string }[] = [
-  { step: 0, short: 'J0 · Crise', full: 'Jour 0 · État initial' },
-  { step: 1, short: '2 sem.', full: 'À 2 semaines · Tolérance & adaptation' },
-  { step: 2, short: '6 mois', full: 'À 6 mois · Remodelage & organes' },
-  { step: 3, short: '5 ans', full: 'À 5 ans · Conséquences majeures' },
+  { step: 0, short: 'T0 · Départ', full: 'Départ · État initial' },
+  { step: 1, short: '2 sem.', full: 'À 2 semaines · Début d’évolution' },
+  { step: 2, short: '6 mois', full: 'À 6 mois · Retentissement' },
+  { step: 3, short: '2 ans', full: 'À 2 ans · Stade critique' },
+  { step: 4, short: '5 ans', full: 'À 5 ans · Issue / maintien' },
 ];
 
 export const CLINICAL_CASES: ClinicalCaseDef[] = [
@@ -703,6 +704,25 @@ export function projectTimelineState(
   branch: TimelineBranch
 ): TimelineProjection {
   const zeroTrt = Object.fromEntries(TRT_IDS.map((k) => [k, false])) as Record<TraitementId, boolean>;
+
+  // En Exploration libre, la trajectoire "Sans traitement" démarre d'un sujet sain (tout normal à T0)
+  // afin de visualiser sans chevauchement l'apparition -> l'évolution -> la complication extrême.
+  if (!cdef && branch === 'untreated' && step === 0) {
+    const clean = freshP();
+    clean.site = currentParams.site;
+    const rClean = compute(clean, { hvg: 0 });
+    return {
+      params: clean,
+      d: { hvg: 0 },
+      titre: 'État normal de départ (aucune pathologie active)',
+      resume: 'Cœur, artères, reins et cerveau fonctionnent à l’équilibre avant le début du scénario.',
+      severite: 'ok',
+      consequences: [
+        `Hémodynamique normale · PA ${fmt(rClean.pas)}/${fmt(rClean.pad)} mmHg · FE ${fmt(rClean.fe * 100)} %`,
+      ],
+    };
+  }
+
   const baseSim: SimParams =
     branch === 'untreated'
       ? cdef
@@ -728,66 +748,76 @@ export function projectTimelineState(
   let hvg = baseHvg;
 
   if (step > 0) {
-    const k = step; // 1 = 2 sem, 2 = 6 mois, 3 = 5 ans
+    const k = step === 1 ? 1 : step === 2 ? 1.8 : step === 3 ? 2.5 : 3.2;
     const rNow = compute(p, { hvg });
     const hasRaa = rNow.raa > 0;
     const htaUncontrolled = (p.mal.hta || rNow.pas > 142) && rNow.pas > 136;
 
     if (htaUncontrolled) {
-      hvg = clamp(hvg + 0.18 * k, 0, 1);
+      hvg = clamp(
+        hvg + (step === 1 ? 0.18 : step === 2 ? 0.36 : step === 3 ? 0.58 : 0.78),
+        0,
+        1
+      );
       p.rigidite = clamp(p.rigidite + 0.08 * k, 0, 1);
-      if (step >= 2) p.resist = +(p.resist * (1 + 0.05 * (step - 1))).toFixed(2);
-      if (step === 3) {
-        p.contract = +(p.contract * 0.84).toFixed(2);
-        if (!t.statine && p.plaque < 4) p.plaque = 4;
+      if (step >= 2) p.resist = +(p.resist * (1 + 0.06 * (step - 1))).toFixed(2);
+      if (step >= 3 && !t.statine && p.plaque < 4) p.plaque = step === 3 ? 4 : 5;
+      if (step === 4) {
+        p.contract = +(p.contract * 0.94).toFixed(2);
+        p.mal.avc = true;
       }
     } else if (hasRaa && rNow.pas <= 135) {
-      hvg = clamp(hvg * (step === 1 ? 0.92 : step === 2 ? 0.65 : 0.35), 0, 1);
+      hvg = clamp(hvg * (step === 1 ? 0.92 : step === 2 ? 0.72 : step === 3 ? 0.5 : 0.35), 0, 1);
     }
 
     if (p.mal.ic || p.act.vg === 'faible') {
       const wellTreatedIC = hasRaa && t.betabloquant && (t.isglt2 || t.diuretique);
       if (wellTreatedIC && branch === 'treated') {
         if (step >= 2) {
-          p.contract = +(p.contract * (step === 2 ? 1.12 : 1.24)).toFixed(2);
-          p.volume = clamp(p.volume - (step === 2 ? 0.35 : 0.55), 4.6, 6.5);
+          p.contract = +(p.contract * (step === 2 ? 1.08 : step === 3 ? 1.16 : 1.24)).toFixed(2);
+          p.volume = clamp(p.volume - (step === 2 ? 0.25 : step === 3 ? 0.42 : 0.55), 4.6, 6.5);
         }
       } else {
-        p.volume = clamp(p.volume + 0.25 * k, 4.5, 6.5);
-        p.contract = +(p.contract * (1 - 0.08 * k)).toFixed(2);
+        p.volume = clamp(p.volume + 0.22 * k, 4.5, 6.5);
+        p.contract = +(p.contract * (1 - 0.07 * k)).toFixed(2);
       }
     }
 
     if (p.mal.ra || p.act.aortique === 'stenose') {
       if (branch === 'untreated' || t.ica || rNow.raa > 0) {
-        hvg = clamp(hvg + 0.14 * k, 0, 1);
-        if (step === 3) p.contract = +(p.contract * 0.78).toFixed(2);
-      } else if (step === 3 && branch === 'treated') {
-        // Orientation vers remplacement valvulaire réussi à long terme
-        p.mal.ra = false;
-        p.act.aortique = null;
-        hvg = clamp(hvg * 0.45, 0, 1);
+        hvg = clamp(hvg + 0.13 * k, 0, 1);
+        if (step >= 3) p.contract = +(p.contract * (step === 4 ? 0.78 : 0.88)).toFixed(2);
+      } else if (step >= 3 && branch === 'treated') {
+        if (step === 4) {
+          p.mal.ra = false;
+          p.act.aortique = null;
+          hvg = clamp(hvg * 0.45, 0, 1);
+        } else {
+          hvg = clamp(hvg * 0.85, 0, 1);
+        }
       }
     }
 
     if (p.mal.dyslipidemie || p.plaque > 0) {
       if (t.statine && branch === 'treated') {
         if (step === 1 && t.antiagregant && p.plaque >= 5) p.plaque = 4;
-        else if (step >= 2 && p.plaque > 2) p.plaque = Math.max(2, p.plaque - (step === 3 ? 2 : 1));
+        else if (step >= 2 && p.plaque > 2) {
+          p.plaque = Math.max(2, p.plaque - (step >= 4 ? 3 : step === 3 ? 2 : 1));
+        }
       } else if (!t.statine) {
         if (p.plaque === 0 && p.mal.dyslipidemie) {
-          p.plaque = step === 1 ? 3 : step === 2 ? 5 : 6;
+          p.plaque = step === 1 ? 2 : step === 2 ? 4 : 6;
         } else {
           p.plaque = clamp(p.plaque + (step === 1 ? 1 : step === 2 ? 2 : 3), 0, 6);
         }
-        if (p.plaque === 6 && step === 3) {
+        if (p.plaque === 6 && step === 4) {
           if (p.site === 'carotide') p.mal.avc = true;
           else p.mal.idm = true;
         }
       }
     }
 
-    if (p.mal.fa && !t.anticoagulant && step === 3) {
+    if (p.mal.fa && !t.anticoagulant && step === 4) {
       p.mal.avc = true;
     }
   }
@@ -797,19 +827,22 @@ export function projectTimelineState(
   if (rProj.pog >= 22) consequences.push('Œdème aigu du poumon (POG ≥ 22 mmHg)');
   else if (rProj.congestion > 0.25) consequences.push(`Congestion pulmonaire (POG ${fmt(rProj.pog)} mmHg)`);
   if (rProj.oedeme > 0.45) consequences.push('Œdèmes des membres inférieurs marqués');
-  if (p.mal.avc) consequences.push('AVC ischémique constitué');
+  if (p.mal.avc) consequences.push('Atteinte cérébrale · AVC ischémique');
   if (p.mal.idm) consequences.push('Nécrose myocardique (IDM)');
-  if (hvg >= 0.65) consequences.push('Hypertrophie VG marquée (risque rythmique & diastolique)');
-  if (rProj.bio.dfg < 55) consequences.push(`Insuffisance rénale (DFG ${rProj.bio.dfg} mL/min)`);
+  if (hvg >= 0.55) consequences.push('Cœur · Hypertrophie du VG (HVG)');
+  if (rProj.rein > 0.25 || rProj.bio.dfg < 65) {
+    consequences.push(`Rein · hyperpression / DFG ${rProj.bio.dfg} mL/min`);
+  }
   if (consequences.length === 0) {
     consequences.push(
-      `Hémodynamique équilibrée · PA ${fmt(rProj.pas)}/${fmt(rProj.pad)} mmHg · FE ${fmt(rProj.fe * 100)} %`
+      `Équilibre maintenu · PA ${fmt(rProj.pas)}/${fmt(rProj.pad)} mmHg · FE ${fmt(rProj.fe * 100)} %`
     );
   }
 
   const hasAnyTrt = TRT_IDS.some((k) => t[k]);
   const hasProtectivePlan = hasAnyTrt || cdef?.id === 'ra-serre';
-  const hMeta = cdef?.horaires[step];
+  const hIdx: 0 | 1 | 2 | 3 = step === 0 ? 0 : step === 1 ? 1 : step <= 3 ? 2 : 3;
+  const hMeta = cdef?.horaires[hIdx];
   const titre = hMeta
     ? branch === 'untreated' || !hasProtectivePlan
       ? hMeta.untreatedTitle
@@ -829,7 +862,7 @@ export function projectTimelineState(
     p.mal.avc ||
     p.mal.idm ||
     p.plaque >= 6 ||
-    (p.mal.fa && !t.anticoagulant && step >= 2) ||
+    (p.mal.fa && !t.anticoagulant && step >= 3) ||
     rProj.pog >= 21 ||
     rProj.fe < 0.35 ||
     rProj.pas > 152 ||
@@ -840,7 +873,8 @@ export function projectTimelineState(
     rProj.congestion > 0.25 ||
     rProj.oedeme > 0.45 ||
     rProj.pas > 138 ||
-    hvg >= 0.5 ||
+    hvg >= 0.45 ||
+    rProj.rein > 0.22 ||
     rProj.bio.dfg < 65 ||
     p.plaque >= 3 ||
     rProj.fe < 0.5 ||

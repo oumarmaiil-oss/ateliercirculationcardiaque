@@ -12,6 +12,7 @@ import {
 } from '../engine/geometry2d';
 import type {
   ComputedResult,
+  SceneLesionId,
   SimParams,
   VesselSiteId,
   ViewLevel,
@@ -95,6 +96,32 @@ function flowDraw(
     c.arc(p[0], p[1], rad, 0, Math.PI * 2);
     c.fill();
   }
+}
+
+export function corpsLesionHit(
+  x: number,
+  y: number,
+  p: SimParams,
+  r: ComputedResult,
+  story?: VisualStoryOverlay
+): SceneLesionId | null {
+  if (p.mal.avc && (Math.hypot(x - 363, y - 86) < 20 || Math.hypot(x - 356, y - 58) < 20)) {
+    return 'avc-clot';
+  }
+  if (r.pulmEmb && Math.hypot(x - 412, y - 198) < 20) {
+    return 'pulm-emb';
+  }
+  if (p.ischJambe && Math.hypot(x - 416, y - 415) < 20) {
+    return 'leg-clot';
+  }
+  const faVisible = p.mal.fa && !p.mal.avc && (!r.tr.anticoagulant || (story?.clotProgress ?? 0.5) > 0.14);
+  if (faVisible && Math.hypot(x - 394, y - 202) < 16) {
+    return 'fa-clot';
+  }
+  if (r.zoneIDM && Math.hypot(x - 386, y - 212) < 15) {
+    return `coro-${r.zoneIDM}` as SceneLesionId;
+  }
+  return null;
 }
 
 export function corpsHit(x: number, y: number): { kind: 'heart' } | { kind: 'site'; site: VesselSiteId } | null {
@@ -295,24 +322,22 @@ export function drawCorps({
   strokePath([[380, 198], [448, 186], [476, 300]], artCol, 3.5 * artMul);
   strokePath([[380, 290], [414, 298]], artCol, 2.8 * artMul);
 
-  if (p.mal.avc) {
-    c.fillStyle = '#fbbf24';
+  const drawClotMarker = (cx: number, cy: number, rad: number) => {
+    c.save();
+    c.fillStyle = '#991b1b';
+    c.strokeStyle = '#fbbf24';
+    c.lineWidth = 2;
     c.beginPath();
-    c.arc(363, 86, 4.5, 0, Math.PI * 2);
+    c.arc(cx, cy, rad, 0, Math.PI * 2);
     c.fill();
-  }
-  if (r.pulmEmb) {
-    c.fillStyle = '#fbbf24';
-    c.beginPath();
-    c.arc(412, 198, 6, 0, Math.PI * 2);
-    c.fill();
-  }
-  if (p.ischJambe) {
-    c.fillStyle = '#fbbf24';
-    c.beginPath();
-    c.arc(416, 415, 5, 0, Math.PI * 2);
-    c.fill();
-  }
+    c.stroke();
+    c.restore();
+  };
+
+  if (p.mal.avc) drawClotMarker(363, 86, 6);
+  if (r.pulmEmb) drawClotMarker(412, 198, 7);
+  if (p.ischJambe) drawClotMarker(416, 415, 6);
+  if (r.zoneIDM) drawClotMarker(386, 212, 5.5);
 
   // Ankle edema (clearly proportional so Amloperin/Tensoplus −55 % reduction is visible!)
   if (r.oedeme > 0.08) {
@@ -372,12 +397,10 @@ export function drawCorps({
   c.stroke();
   c.restore();
 
-  // FA clot in LA appendage
-  if (p.mal.fa && !state.embolActive && !p.mal.avc) {
-    c.fillStyle = r.tr.anticoagulant ? 'rgba(251,191,36,0.28)' : '#fbbf24';
-    c.beginPath();
-    c.arc(394, 202, r.tr.anticoagulant ? 2.6 : 5, 0, Math.PI * 2);
-    c.fill();
+  // FA clot in LA appendage (hidden completely when anticoagulated & healed)
+  const faClotStrength = story ? story.clotProgress * (1 - story.treatmentHeal * 0.85) : r.tr.anticoagulant ? 0 : 0.8;
+  if (p.mal.fa && !state.embolActive && !p.mal.avc && (!r.tr.anticoagulant || faClotStrength > 0.14)) {
+    drawClotMarker(394, 202, r.tr.anticoagulant ? 3.5 : 5.5);
   }
 
   // Clot-to-brain embolus animation
@@ -490,26 +513,25 @@ export function drawCorps({
 
   // Inspection focus spotlight ring when paused on a key moment
   if (story?.inspectionPaused && story.focusZone) {
-    const spotMap: Record<string, { x: number; y: number; r: number } | undefined> = {
-      cerveau: { x: 372, y: 58, r: 42 },
-      poumons: { x: 424, y: 198, r: 54 },
-      coronaire: { x: 386, y: 210, r: 42 },
-      embole: { x: 368, y: 120, r: 44 },
-      cheville: { x: 380, y: 504, r: 64 },
-    };
-    const sp = spotMap[story.focusZone];
-    if (sp) {
+    if (story.focusZone === 'hta-organes') {
+      const targets = [
+        { x: 380, y: 56, r: 34, tag: 'Cerveau' },
+        { x: 384, y: 208, r: 34, tag: 'Cœur (HVG)' },
+        { x: 380, y: 298, r: 50, tag: 'Reins' },
+      ];
       c.save();
       c.strokeStyle = '#38bdf8';
-      c.lineWidth = 2;
-      c.setLineDash([6, 4]);
-      c.beginPath();
-      c.arc(sp.x, sp.y, sp.r, 0, Math.PI * 2);
-      c.stroke();
+      c.lineWidth = 1.8;
+      c.setLineDash([5, 4]);
+      for (const tg of targets) {
+        c.beginPath();
+        c.arc(tg.x, tg.y, tg.r, 0, Math.PI * 2);
+        c.stroke();
+      }
       c.setLineDash([]);
-      c.fillStyle = 'rgba(15, 23, 42, 0.88)';
+      c.fillStyle = 'rgba(15, 23, 42, 0.9)';
       c.beginPath();
-      c.roundRect(Math.max(12, sp.x - 110), Math.max(12, sp.y - sp.r - 28), 220, 22, 6);
+      c.roundRect(245, 10, 270, 22, 6);
       c.fill();
       c.strokeStyle = 'rgba(56,189,248,0.65)';
       c.lineWidth = 1;
@@ -517,8 +539,48 @@ export function drawCorps({
       c.fillStyle = '#bae6fd';
       c.font = '600 11px "Plus Jakarta Sans", system-ui, sans-serif';
       c.textAlign = 'center';
-      c.fillText(story.focusLabel, sp.x, Math.max(27, sp.y - sp.r - 13));
+      c.fillText(story.focusLabel, 380, 25);
       c.restore();
+    } else {
+      const spotMap: Record<string, { x: number; y: number; r: number } | undefined> = {
+        cerveau: { x: 372, y: 58, r: 42 },
+        poumons: { x: 424, y: 198, r: 54 },
+        coronaire: { x: 386, y: 210, r: 42 },
+        rein: { x: 380, y: 298, r: 56 },
+        embole: { x: 368, y: 120, r: 44 },
+        cheville: { x: 380, y: 504, r: 64 },
+      };
+      const sp = spotMap[story.focusZone];
+      if (sp) {
+        c.save();
+        c.strokeStyle = '#38bdf8';
+        c.lineWidth = 2;
+        c.setLineDash([6, 4]);
+        c.beginPath();
+        c.arc(sp.x, sp.y, sp.r, 0, Math.PI * 2);
+        c.stroke();
+        c.setLineDash([]);
+        c.fillStyle = 'rgba(15, 23, 42, 0.88)';
+        c.beginPath();
+        c.roundRect(Math.max(12, sp.x - 115), Math.max(12, sp.y - sp.r - 28), 230, 22, 6);
+        c.fill();
+        c.strokeStyle = 'rgba(56,189,248,0.65)';
+        c.lineWidth = 1;
+        c.stroke();
+        c.fillStyle = '#bae6fd';
+        c.font = '600 11px "Plus Jakarta Sans", system-ui, sans-serif';
+        c.textAlign = 'center';
+        c.fillText(story.focusLabel, sp.x, Math.max(27, sp.y - sp.r - 13));
+        c.restore();
+      }
     }
   }
+
+  // Discreet corner attribution (carried over in screenshots & videos)
+  c.save();
+  c.font = '500 10px "IBM Plex Mono", ui-monospace, monospace';
+  c.fillStyle = 'rgba(148, 163, 184, 0.30)';
+  c.textAlign = 'right';
+  c.fillText('Atelier du Cœur · Dr O. Sow', W - 14, H - 10);
+  c.restore();
 }

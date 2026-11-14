@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   Camera,
+  CheckCircle2,
   ChevronLeft,
   ChevronRight,
   Eye,
@@ -10,6 +11,7 @@ import {
   PanelLeftClose,
   PanelLeftOpen,
   Pause,
+  Pill,
   Play,
   RotateCcw,
   Share2,
@@ -18,11 +20,12 @@ import {
   VolumeX,
   X,
 } from 'lucide-react';
-import { createAudioEngine, initAudio, sndTick } from './audio/heartSounds';
+import { createAudioEngine, getAudioCaptureTracks, initAudio, sndTick } from './audio/heartSounds';
 import { ComponentModal } from './components/ComponentModal';
 import { ControlPanel } from './components/ControlPanel';
 import { ShortcutsModal, SourcesModal, WelcomeModal } from './components/InfoModals';
 import { ConsequenceTimelineDock, MissionBriefCard } from './components/MissionWorkspace';
+import { SceneLesionPopover } from './components/SceneLesionPopover';
 import { ACT_LBL, COMP, EX, SITES, actsFor, explain, nowHTML } from './data/medicalContent';
 import {
   beat,
@@ -53,6 +56,11 @@ import {
   setPlaqueStage,
 } from './engine/physiology';
 import {
+  getTreatmentProtocol,
+  isProtocolApplied,
+  mergeProtocolOnParams,
+} from './engine/protocols';
+import {
   buildVisualStoryOverlay,
   getStoryboardMoment,
   interpolateTimelineProjection,
@@ -60,14 +68,13 @@ import {
 import type {
   ActionType,
   AppMode,
-  AssociationId,
   ComponentId,
   ComputedResult,
   DisplayProfile,
   DynamicState,
   Heart3DMode,
   HeartChartMode,
-  MaladieId,
+  SceneLesionId,
   SimParams,
   TabId,
   TimelineBranch,
@@ -79,10 +86,10 @@ import type {
   VisualStoryOverlay,
 } from './engine/types';
 import { drawOnde, drawPVLoop, drawWiggers } from './renderers/charts';
-import { coeurHit, createCoeurState, drawCoeur } from './renderers/coeur2d';
-import { corpsHit, createCorpsState, drawCorps } from './renderers/corps2d';
+import { coeurHit, coeurLesionHit, createCoeurState, drawCoeur } from './renderers/coeur2d';
+import { corpsHit, corpsLesionHit, createCorpsState, drawCorps } from './renderers/corps2d';
 import { createHeart3D, type Heart3DInstance } from './renderers/heart3d';
-import { createVaisseauState, drawVaisseau } from './renderers/vaisseau2d';
+import { createVaisseauState, drawVaisseau, vaisseauLesionHit } from './renderers/vaisseau2d';
 import { createVessel3D, type Vessel3DInstance } from './renderers/vessel3d';
 
 const SPEEDS = [0.25, 0.5, 1, 1.5];
@@ -173,11 +180,11 @@ function parseInitialUrl(): {
   let tab: TabId = 'corps';
   let exId = 'sain';
   let level: ViewLevel = 1;
-  let mode: AppMode = 'cas';
+  let mode: AppMode = 'libre';
   let caseId = CLINICAL_CASES[0].id;
   const search = new URLSearchParams(window.location.search);
   const autostart = search.get('autostart') === '1';
-  if (search.get('mode') === 'libre') mode = 'libre';
+  if (search.get('mode') === 'cas') mode = 'cas';
 
   const rawHash = window.location.hash.replace(/^#/, '');
   if (rawHash) {
@@ -186,7 +193,6 @@ function parseInitialUrl(): {
     if (first === 'corps' || first === 'coeur' || first === 'vaisseau') {
       tab = first;
     }
-    let hasExplicitMode = false;
     for (const part of parts) {
       const [k, v] = part.split('=');
       if (k === 'ex' && v) exId = decodeURIComponent(v);
@@ -195,7 +201,6 @@ function parseInitialUrl(): {
       }
       if (k === 'mode' && (v === 'cas' || v === 'libre')) {
         mode = v;
-        hasExplicitMode = true;
       }
       if (k === 'cas' && v) {
         const decoded = decodeURIComponent(v);
@@ -203,9 +208,6 @@ function parseInitialUrl(): {
           caseId = decoded;
         }
       }
-    }
-    if (!hasExplicitMode && search.get('mode') !== 'cas') {
-      mode = 'libre';
     }
   }
   return { tab, exId, level, autostart, mode, caseId };
@@ -224,9 +226,12 @@ export default function App() {
   const [timelineBranch, setTimelineBranch] = useState<TimelineBranch>('treated');
   const [storyPlaying, setStoryPlaying] = useState<boolean>(false);
   const [storyAutoPause, setStoryAutoPause] = useState<boolean>(true);
+  const [storyAlternate, setStoryAlternate] = useState<boolean>(true);
   const [inspectionPaused, setInspectionPaused] = useState<boolean>(false);
   const [isRecordingVideo, setIsRecordingVideo] = useState<boolean>(false);
   const [recordingSeconds, setRecordingSeconds] = useState<number>(0);
+  const [activeLesionId, setActiveLesionId] = useState<SceneLesionId | null>(null);
+  const alternateDoneRef = useRef<boolean>(false);
   const [showEvaluation, setShowEvaluation] = useState<boolean>(false);
   const [hintIndex, setHintIndex] = useState<number>(0);
   const [auscultBlind, setAuscultBlind] = useState<boolean>(false);
@@ -287,16 +292,45 @@ export default function App() {
     [activeCaseId]
   );
 
+  const activeProtocol = useMemo(
+    () => getTreatmentProtocol(params, appMode, appMode === 'cas' ? activeCase : null),
+    [params, appMode, activeCase]
+  );
+
+  const protocolApplied = useMemo(
+    () => (activeProtocol ? isProtocolApplied(params, activeProtocol) : false),
+    [params, activeProtocol]
+  );
+
+  const hasAnyTrt = useMemo(() => {
+    const { t, asso } = activeTrt(params);
+    return Boolean(asso) || Object.values(t).some(Boolean);
+  }, [params]);
+
+  const timelineEffectiveInputParams = useMemo(() => {
+    if (
+      storyAlternate &&
+      storyPlaying &&
+      timelineBranch === 'treated' &&
+      !hasAnyTrt &&
+      activeProtocol &&
+      !activeProtocol.isMechanical
+    ) {
+      return mergeProtocolOnParams(params, activeProtocol.presetPatch);
+    }
+    return params;
+  }, [storyAlternate, storyPlaying, timelineBranch, hasAnyTrt, activeProtocol, params]);
+
   const timelineProjection = useMemo(
     () =>
       projectTimelineState(
-        params,
+        timelineEffectiveInputParams,
         dynHvg,
         appMode === 'cas' ? activeCase : null,
         timelineStep,
         timelineBranch
       ),
-    [params, dynHvg, appMode, activeCase, timelineStep, timelineBranch]
+    [timelineEffectiveInputParams, dynHvg, appMode, activeCase, timelineStep, timelineBranch]
   );
 
   const effectiveParams: SimParams = useMemo(() => {
@@ -336,11 +370,11 @@ export default function App() {
       getStoryboardMoment(
         appMode,
         appMode === 'cas' ? activeCase : null,
-        params,
+        timelineEffectiveInputParams,
         timelineBranch,
         timelineStep
       ),
-    [appMode, activeCase, params, timelineBranch, timelineStep]
+    [appMode, activeCase, timelineEffectiveInputParams, timelineBranch, timelineStep]
   );
 
   const storyOverlay = useMemo(
@@ -522,10 +556,22 @@ export default function App() {
       const inst = createHeart3D(
         host,
         (id) => {
-          if (id) setQuickCompId(id);
+          if (!id) {
+            setQuickCompId(null);
+            setActiveLesionId(null);
+            return;
+          }
+          if (id.startsWith('lesion:')) {
+            setQuickCompId(null);
+            setActiveLesionId(id.slice(7) as SceneLesionId);
+          } else {
+            setActiveLesionId(null);
+            setQuickCompId(id as ComponentId);
+          }
         },
         (id, cx, cy) => {
-          setHoverCompId(id);
+          const comp = id && !id.startsWith('lesion:') ? (id as ComponentId) : null;
+          setHoverCompId(comp);
           setHoverPos(id ? { x: cx, y: cy } : null);
           if (host) host.style.cursor = id ? 'pointer' : 'grab';
         }
@@ -540,7 +586,14 @@ export default function App() {
 
     if (viewMode === '3d' && tab === 'vaisseau') {
       const inst = createVessel3D(host, (layer) => {
-        if (layer) showToast(`Couche sélectionnée : ${layer}`);
+        if (layer === 'plaque') {
+          setActiveLesionId('vessel-plaque');
+        } else if (layer === 'thrombus') {
+          setActiveLesionId('vessel-thrombus');
+        } else if (layer) {
+          setActiveLesionId(null);
+          showToast(`Couche sélectionnée : ${layer}`);
+        }
       });
       vessel3dInstRef.current = inst;
       return () => {
@@ -758,8 +811,14 @@ export default function App() {
     setParams(np);
     setDynHvg(nd.hvg);
     setActiveExId(id);
+    setTimelineStep(0);
+    setTimelineBranch('treated');
+    setStoryPlaying(false);
+    alternateDoneRef.current = false;
+    setInspectionPaused(false);
     setCompareUntreated(false);
     setQuickCompId(null);
+    setActiveLesionId(null);
     setBannerMsg(null);
     corpsStateRef.current.embolActive = false;
     corpsStateRef.current.embolArrived = false;
@@ -773,6 +832,7 @@ export default function App() {
     setHoverCompId(null);
     setHoverPos(null);
     setQuickCompId(null);
+    setActiveLesionId(null);
     setModalCompId(null);
     if (nextTab === 'corps' && viewMode === '3d') {
       setViewMode('2d');
@@ -791,6 +851,7 @@ export default function App() {
       setTimelineStep(0);
       setTimelineBranch('treated');
       setStoryPlaying(false);
+      alternateDoneRef.current = false;
       setInspectionPaused(false);
       setShowEvaluation(false);
       setHintIndex(0);
@@ -798,6 +859,7 @@ export default function App() {
       setAuscultGuess(null);
       setCompareUntreated(false);
       setQuickCompId(null);
+      setActiveLesionId(null);
       setBannerMsg(null);
       setTab(cdef.tabDefaut);
       if (cdef.tabDefaut === 'corps') setViewMode('2d');
@@ -814,9 +876,11 @@ export default function App() {
       setTimelineStep(0);
       setTimelineBranch('treated');
       setStoryPlaying(false);
+      alternateDoneRef.current = false;
       setInspectionPaused(false);
       setShowEvaluation(false);
       setAuscultBlind(false);
+      setActiveLesionId(null);
       if (nextMode === 'cas') {
         const cdef = CLINICAL_CASES.find((c) => c.id === activeCaseId) || CLINICAL_CASES[0];
         const { params: np, d: nd } = applyPresetToParams(cdef.preset);
@@ -826,6 +890,13 @@ export default function App() {
         if (cdef.tabDefaut === 'corps') setViewMode('2d');
         setPane('ctl');
       } else {
+        setParams(freshP());
+        setDynHvg(0);
+        setActiveExId('sain');
+        setSpeed(1);
+        setBannerMsg(null);
+        corpsStateRef.current.embolActive = false;
+        corpsStateRef.current.embolArrived = false;
         setPane('ex');
       }
     },
@@ -844,9 +915,11 @@ export default function App() {
     setTimelineStep(0);
     setTimelineBranch('treated');
     setStoryPlaying(false);
+    alternateDoneRef.current = false;
     setInspectionPaused(false);
     setCompareUntreated(false);
     setQuickCompId(null);
+    setActiveLesionId(null);
     setSpeed(1);
     setPlaying(true);
     setBannerMsg(null);
@@ -919,12 +992,55 @@ export default function App() {
     if (vessel3dInstRef.current) vessel3dInstRef.current.viewport.needRender = true;
   }, []);
 
-  // Storyboard key-moment playback & auto-pause
+  const handleApplyTargetedProtocol = useCallback(() => {
+    if (!activeProtocol) return;
+    if (activeProtocol.isMechanical) {
+      setParams((prev) => {
+        const cleanTrt = Object.fromEntries(TRT_IDS.map((k) => [k, false])) as Record<
+          TraitementId,
+          boolean
+        >;
+        return { ...prev, trt: cleanTrt, asso: null };
+      });
+      setTimelineBranch('treated');
+      setCompareUntreated(false);
+      showToast('Conduite respectée : vasodilatateurs évités (préparation TAVI)');
+      return;
+    }
+    setParams((prev) => mergeProtocolOnParams(prev, activeProtocol.presetPatch));
+    setTimelineBranch('treated');
+    setCompareUntreated(false);
+    showToast(`Protocole appliqué : ${activeProtocol.conditionTitle}`);
+  }, [activeProtocol, showToast]);
+
+  // Storyboard key-moment playback, auto-pause & dual-outcome alternation
   useEffect(() => {
     if (!storyPlaying) return;
     const delayMs = storyAutoPause ? 1200 : 2300;
     const id = window.setTimeout(() => {
-      if (timelineStep >= 3) {
+      if (timelineStep >= 4) {
+        if (storyAlternate && !alternateDoneRef.current && activeProtocol) {
+          alternateDoneRef.current = true;
+          const nextBranch: TimelineBranch =
+            timelineBranch === 'untreated' ? 'treated' : 'untreated';
+          if (
+            nextBranch === 'treated' &&
+            appMode === 'libre' &&
+            !hasAnyTrt &&
+            !activeProtocol.isMechanical
+          ) {
+            setParams((prev) => mergeProtocolOnParams(prev, activeProtocol.presetPatch));
+          }
+          setTimelineBranch(nextBranch);
+          setTimelineStep(0);
+          setInspectionPaused(false);
+          showToast(
+            nextBranch === 'treated'
+              ? 'Issue 2/2 : Avec traitement'
+              : 'Issue 1/2 : Sans traitement'
+          );
+          return;
+        }
         setStoryPlaying(false);
         if (storyAutoPause) setInspectionPaused(true);
         return;
@@ -937,7 +1053,17 @@ export default function App() {
       }
     }, delayMs);
     return () => window.clearTimeout(id);
-  }, [storyPlaying, storyAutoPause, timelineStep]);
+  }, [
+    storyPlaying,
+    storyAutoPause,
+    storyAlternate,
+    timelineStep,
+    timelineBranch,
+    activeProtocol,
+    appMode,
+    hasAnyTrt,
+    showToast,
+  ]);
 
   const handleChangeTimelineStep = useCallback((s: TimelineHorizon) => {
     setStoryPlaying(false);
@@ -946,12 +1072,26 @@ export default function App() {
     need2DRenderRef.current = true;
   }, []);
 
-  const handleChangeTimelineBranch = useCallback((b: TimelineBranch) => {
-    setStoryPlaying(false);
-    setInspectionPaused(false);
-    setTimelineBranch(b);
-    need2DRenderRef.current = true;
-  }, []);
+  const handleChangeTimelineBranch = useCallback(
+    (b: TimelineBranch) => {
+      setStoryPlaying(false);
+      alternateDoneRef.current = false;
+      setInspectionPaused(false);
+      if (
+        b === 'treated' &&
+        appMode === 'libre' &&
+        !hasAnyTrt &&
+        activeProtocol &&
+        !activeProtocol.isMechanical
+      ) {
+        setParams((prev) => mergeProtocolOnParams(prev, activeProtocol.presetPatch));
+        showToast(`Traitement appliqué : ${activeProtocol.classes[0]}`);
+      }
+      setTimelineBranch(b);
+      need2DRenderRef.current = true;
+    },
+    [appMode, hasAnyTrt, activeProtocol, showToast]
+  );
 
   const handleStepPrev = useCallback(() => {
     setStoryPlaying(false);
@@ -963,7 +1103,7 @@ export default function App() {
   const handleStepNext = useCallback(() => {
     setStoryPlaying(false);
     setTimelineStep((s) => {
-      const next = Math.min(3, s + 1) as TimelineHorizon;
+      const next = Math.min(4, s + 1) as TimelineHorizon;
       if (storyAutoPause && next > s) {
         setInspectionPaused(true);
       } else {
@@ -979,8 +1119,11 @@ export default function App() {
       if (prev) return false;
       setInspectionPaused(false);
       setPlaying(true);
-      if (timelineStep === 3) {
+      if (timelineStep === 4) {
+        alternateDoneRef.current = false;
         setTimelineStep(0);
+      } else if (timelineStep === 0) {
+        alternateDoneRef.current = false;
       }
       return true;
     });
@@ -1044,10 +1187,15 @@ export default function App() {
       }`;
       octx.fillStyle = '#f8fafc';
       octx.font = 'bold 15px system-ui, -apple-system, sans-serif';
-      octx.fillText(headerTitle.slice(0, 96), 16, cv.height + 24);
+      octx.fillText(headerTitle.slice(0, 74), 16, cv.height + 24);
       octx.fillStyle = '#94a3b8';
       octx.font = '13px ui-monospace, SFMono-Regular, Menlo, monospace';
       octx.fillText(metricsLine, 16, cv.height + 46);
+      octx.fillStyle = 'rgba(148, 163, 184, 0.72)';
+      octx.font = '11px system-ui, -apple-system, sans-serif';
+      octx.textAlign = 'right';
+      octx.fillText('Atelier du Cœur · Dr O. Sow (Open Source MIT)', out.width - 16, cv.height + 24);
+      octx.textAlign = 'left';
       url = out.toDataURL('image/png');
     } else {
       url = cv.toDataURL('image/png');
@@ -1104,12 +1252,36 @@ export default function App() {
     }
 
     try {
-      const stream = cv.captureStream(30);
-      const candidates = ['video/webm;codecs=vp9', 'video/webm;codecs=vp8', 'video/webm'];
+      const videoStream = cv.captureStream(30);
+      const audioTracks = getAudioCaptureTracks(audioRef.current);
+      if (audioTracks.length > 0 && !soundEnabled) {
+        setSoundEnabled(true);
+      }
+      const combinedStream =
+        audioTracks.length > 0
+          ? new MediaStream([...videoStream.getVideoTracks(), ...audioTracks])
+          : videoStream;
+
+      const candidates =
+        audioTracks.length > 0
+          ? [
+              'video/webm;codecs=vp9,opus',
+              'video/webm;codecs=vp8,opus',
+              'video/webm;codecs=vp9',
+              'video/webm;codecs=vp8',
+              'video/webm',
+            ]
+          : ['video/webm;codecs=vp9', 'video/webm;codecs=vp8', 'video/webm'];
       const mimeType = candidates.find((m) => MediaRecorder.isTypeSupported(m));
-      const recorder = mimeType
-        ? new MediaRecorder(stream, { mimeType })
-        : new MediaRecorder(stream);
+
+      let recorder: MediaRecorder;
+      try {
+        recorder = mimeType
+          ? new MediaRecorder(combinedStream, { mimeType })
+          : new MediaRecorder(combinedStream);
+      } catch {
+        recorder = new MediaRecorder(videoStream);
+      }
 
       recordChunksRef.current = [];
       recorder.ondataavailable = (ev: BlobEvent) => {
@@ -1118,7 +1290,7 @@ export default function App() {
         }
       };
       recorder.onstop = () => {
-        stream.getTracks().forEach((tr) => tr.stop());
+        videoStream.getTracks().forEach((tr) => tr.stop());
         const chunks = recordChunksRef.current;
         if (chunks.length > 0) {
           const blob = new Blob(chunks, { type: mimeType || 'video/webm' });
@@ -1128,7 +1300,11 @@ export default function App() {
           a.download = `atelier-coeur-${tab}-etape${timelineStep + 1}.webm`;
           a.click();
           window.setTimeout(() => URL.revokeObjectURL(url), 4000);
-          showToast('Vidéo WebM enregistrée');
+          showToast(
+            audioTracks.length > 0
+              ? 'Vidéo WebM avec son cardiaque enregistrée'
+              : 'Vidéo WebM enregistrée'
+          );
         }
         mediaRecorderRef.current = null;
       };
@@ -1140,12 +1316,16 @@ export default function App() {
       recordTimerRef.current = window.setInterval(() => {
         setRecordingSeconds((s) => s + 1);
       }, 1000);
-      showToast('Enregistrement vidéo démarré');
+      showToast(
+        audioTracks.length > 0
+          ? 'Enregistrement vidéo + audio cardiaque démarré'
+          : 'Enregistrement vidéo démarré'
+      );
     } catch {
       showToast('Impossible de démarrer l’enregistrement vidéo');
       setIsRecordingVideo(false);
     }
-  }, [isRecordingVideo, stopVideoRecorder, viewMode, tab, timelineStep, showToast]);
+  }, [isRecordingVideo, stopVideoRecorder, viewMode, tab, timelineStep, soundEnabled, showToast]);
 
   useEffect(() => {
     return () => {
@@ -1193,6 +1373,7 @@ export default function App() {
       if (e.key === 'Escape') {
         setModalCompId(null);
         setQuickCompId(null);
+        setActiveLesionId(null);
         setShowKeys(false);
         setShowSources(false);
         setShowWelcome(false);
@@ -1231,7 +1412,7 @@ export default function App() {
     handleResetAll,
   ]);
 
-  // 2D canvas pointer mapping
+  // 2D canvas pointer mapping (exact object-fit: contain projection)
   const toCanvasCoords = (
     e: React.MouseEvent<HTMLCanvasElement>,
     w: number,
@@ -1239,17 +1420,31 @@ export default function App() {
   ): [number, number] => {
     const cv = e.currentTarget;
     const rect = cv.getBoundingClientRect();
+    const scale = Math.min(rect.width / w, rect.height / h);
+    const drawnW = w * scale;
+    const drawnH = h * scale;
+    const ox = rect.left + (rect.width - drawnW) / 2;
+    const oy = rect.top + (rect.height - drawnH) / 2;
     return [
-      ((e.clientX - rect.left) / rect.width) * w,
-      ((e.clientY - rect.top) / rect.height) * h,
+      ((e.clientX - ox) / drawnW) * w,
+      ((e.clientY - oy) / drawnH) * h,
     ];
   };
 
   const handleCanvasClick = (e: React.MouseEvent<HTMLCanvasElement>) => {
     if (tab === 'corps') {
       const [x, y] = toCanvasCoords(e, 760, 560);
+      const lesion = corpsLesionHit(x, y, effectiveParams, computed, storyOverlayRef.current);
+      if (lesion) {
+        setActiveLesionId(lesion);
+        setQuickCompId(null);
+        return;
+      }
       const hit = corpsHit(x, y);
-      if (!hit) return;
+      if (!hit) {
+        setActiveLesionId(null);
+        return;
+      }
       if (hit.kind === 'heart') {
         handleSwitchTab('coeur');
       } else {
@@ -1258,24 +1453,47 @@ export default function App() {
       }
     } else if (tab === 'coeur' && viewMode === '2d') {
       const [x, y] = toCanvasCoords(e, 1000, 800);
-      const id = coeurHit(x, y);
+      const lesion = coeurLesionHit(x, y, effectiveParams, computed, storyOverlayRef.current);
+      if (lesion) {
+        setActiveLesionId(lesion);
+        setQuickCompId(null);
+        return;
+      }
+      setActiveLesionId(null);
+      const id = coeurHit(x, y, level, effectiveParams);
       setQuickCompId(id);
+    } else if (tab === 'vaisseau' && viewMode === '2d') {
+      const [x, y] = toCanvasCoords(e, 880, 560);
+      const lesion = vaisseauLesionHit(x, y, effectiveParams, storyOverlayRef.current);
+      setActiveLesionId(lesion);
     }
   };
 
   const handleCanvasMove = (e: React.MouseEvent<HTMLCanvasElement>) => {
     if (tab === 'corps') {
       const [x, y] = toCanvasCoords(e, 760, 560);
-      const hit = corpsHit(x, y);
+      const lesion = corpsLesionHit(x, y, effectiveParams, computed, storyOverlayRef.current);
+      const hit = lesion || corpsHit(x, y);
       e.currentTarget.style.cursor = hit ? 'pointer' : 'default';
       return;
     }
     if (tab === 'coeur' && viewMode === '2d') {
       const [x, y] = toCanvasCoords(e, 1000, 800);
-      const id = coeurHit(x, y);
+      const lesion = coeurLesionHit(x, y, effectiveParams, computed, storyOverlayRef.current);
+      if (lesion) {
+        setHoverCompId(null);
+        setHoverPos(null);
+        e.currentTarget.style.cursor = 'pointer';
+        return;
+      }
+      const id = coeurHit(x, y, level, effectiveParams);
       setHoverCompId(id);
       setHoverPos(id ? { x: e.clientX, y: e.clientY } : null);
       e.currentTarget.style.cursor = id ? 'pointer' : 'default';
+    } else if (tab === 'vaisseau' && viewMode === '2d') {
+      const [x, y] = toCanvasCoords(e, 880, 560);
+      const lesion = vaisseauLesionHit(x, y, effectiveParams, storyOverlayRef.current);
+      e.currentTarget.style.cursor = lesion ? 'pointer' : 'default';
     } else {
       e.currentTarget.style.cursor = 'default';
     }
@@ -1477,23 +1695,25 @@ export default function App() {
                 </button>
               ))}
             </div>
-
-            {toastMsg && (
-              <span className="rounded-md border border-emerald-400/40 bg-emerald-950/50 px-2.5 py-0.5 text-[11px] font-medium text-emerald-200">
-                {toastMsg}
-              </span>
-            )}
           </div>
         </div>
 
         {/* Mobile/Tablet switcher so canvas stays immediately accessible */}
-        <div className="mt-1.5 grid grid-cols-3 gap-1 lg:hidden">
-          {(
-            [
-              { id: 'scene', lbl: 'Scène' },
-              { id: 'ex', lbl: 'Exemples' },
-              { id: 'ctl', lbl: 'Réglages' },
-            ] as const
+        <div
+          className={`mt-1.5 grid gap-1 lg:hidden ${
+            appMode === 'libre' ? 'grid-cols-3' : 'grid-cols-2'
+          }`}
+        >
+          {(appMode === 'libre'
+            ? ([
+                { id: 'scene', lbl: 'Scène' },
+                { id: 'ex', lbl: 'Exemples' },
+                { id: 'ctl', lbl: 'Réglages' },
+              ] as const)
+            : ([
+                { id: 'scene', lbl: 'Scène' },
+                { id: 'ctl', lbl: 'Prescription' },
+              ] as const)
           ).map((s) => (
             <button
               key={s.id}
@@ -1531,6 +1751,7 @@ export default function App() {
           }
         >
           <ControlPanel
+            appMode={appMode}
             pane={pane}
             onChangePane={setPane}
             tab={tab}
@@ -1543,10 +1764,12 @@ export default function App() {
               handleSelectExample(id);
               setMobileSheet('scene');
             }}
-            onUpdateSlider={(k, val) =>
-              setParams((prev) => ({ ...prev, [k]: val }))
-            }
-            onToggleMaladie={(mid) =>
+            onUpdateSlider={(k, val) => {
+              if (appMode === 'libre') setActiveExId('personnalise');
+              setParams((prev) => ({ ...prev, [k]: val }));
+            }}
+            onToggleMaladie={(mid) => {
+              if (appMode === 'libre') setActiveExId('personnalise');
               setParams((prev) => {
                 const nextVal = !prev.mal[mid];
                 const nextMal = { ...prev.mal, [mid]: nextVal };
@@ -1563,9 +1786,10 @@ export default function App() {
                     ? 1
                     : prev.plaque;
                 return { ...prev, mal: nextMal, fc: nextFc, plaque: nextPlaque };
-              })
-            }
-            onToggleTraitement={(tid) =>
+              });
+            }}
+            onToggleTraitement={(tid) => {
+              if (appMode === 'libre') setActiveExId('personnalise');
               setParams((prev) => {
                 setCompareUntreated(false);
                 if (prev.asso && C.associations[prev.asso]) {
@@ -1589,19 +1813,22 @@ export default function App() {
                   ...prev,
                   trt: { ...prev.trt, [tid]: !prev.trt[tid] },
                 };
-              })
-            }
-            onSetDose={(tid, dose) =>
+              });
+            }}
+            onSetDose={(tid, dose) => {
+              if (appMode === 'libre') setActiveExId('personnalise');
               setParams((prev) => ({
                 ...prev,
                 dose: { ...prev.dose, [tid]: dose },
-              }))
-            }
+              }));
+            }}
             onSelectAsso={(aid) => {
+              if (appMode === 'libre') setActiveExId('personnalise');
               setCompareUntreated(false);
               setParams((prev) => ({ ...prev, asso: aid }));
             }}
             onSelectPres={(aid, presId) => {
+              if (appMode === 'libre') setActiveExId('personnalise');
               setCompareUntreated(false);
               setParams((prev) => ({
                 ...prev,
@@ -1615,24 +1842,34 @@ export default function App() {
               setPlaying(true);
               setMobileSheet('scene');
             }}
-            onSelectSite={(site: VesselSiteId) =>
-              setParams((prev) => ({ ...prev, site }))
-            }
-            onToggleDysEndo={() =>
-              setParams((prev) => ({ ...prev, dysEndo: !prev.dysEndo }))
-            }
-            onSetPlaque={handleSetPlaque}
+            onSelectSite={(site: VesselSiteId) => {
+              if (appMode === 'libre') setActiveExId('personnalise');
+              setParams((prev) => ({ ...prev, site }));
+            }}
+            onToggleDysEndo={() => {
+              if (appMode === 'libre') setActiveExId('personnalise');
+              setParams((prev) => ({ ...prev, dysEndo: !prev.dysEndo }));
+            }}
+            onSetPlaque={(st) => {
+              if (appMode === 'libre') setActiveExId('personnalise');
+              handleSetPlaque(st);
+            }}
             onPickComponent={(cid) => setQuickCompId(cid)}
-            onQuickAction={handleQuickAction}
-            onToggleExtraRythme={(mode) =>
+            onQuickAction={(id, action) => {
+              if (appMode === 'libre') setActiveExId('personnalise');
+              handleQuickAction(id, action);
+            }}
+            onToggleExtraRythme={(mode) => {
+              if (appMode === 'libre') setActiveExId('personnalise');
               setParams((prev) => ({
                 ...prev,
                 extraRythme: prev.extraRythme === mode ? null : mode,
-              }))
-            }
-            onToggleEffort={() =>
-              setParams((prev) => ({ ...prev, effort: !prev.effort }))
-            }
+              }));
+            }}
+            onToggleEffort={() => {
+              if (appMode === 'libre') setActiveExId('personnalise');
+              setParams((prev) => ({ ...prev, effort: !prev.effort }));
+            }}
             onResetAll={handleResetAll}
           />
         </div>
@@ -1843,6 +2080,119 @@ export default function App() {
                 </div>
               )}
 
+              {/* Direct Clickable Lesion / Clot Action Popover */}
+              {activeLesionId && (
+                <SceneLesionPopover
+                  lesionId={activeLesionId}
+                  params={effectiveParams}
+                  appMode={appMode}
+                  activeCase={appMode === 'cas' ? activeCase : null}
+                  onClose={() => setActiveLesionId(null)}
+                  onApplyProtocol={() => {
+                    handleApplyTargetedProtocol();
+                    setActiveLesionId(null);
+                  }}
+                  onAnticoagulate={() => {
+                    setParams((prev) => ({
+                      ...prev,
+                      trt: { ...prev.trt, anticoagulant: true },
+                    }));
+                    setTimelineBranch('treated');
+                    setCompareUntreated(false);
+                    showToast('Anticoagulant activé : résorption du caillot en cours');
+                    setActiveLesionId(null);
+                  }}
+                  onTriggerFAEmbol={() => {
+                    setActiveLesionId(null);
+                    if (tab !== 'corps') handleSwitchTab('corps');
+                    corpsStateRef.current.embolActive = true;
+                    corpsStateRef.current.embolProgress = 0;
+                    corpsStateRef.current.embolArrived = false;
+                    setPlaying(true);
+                    showToast('Migration du caillot vers le cerveau déclenchée');
+                  }}
+                  onRemoveFA={() => {
+                    setParams((prev) => ({
+                      ...prev,
+                      fc: prev.fc === C.maladies.fa.fcVentriculaire ? C.normal.fc : prev.fc,
+                      mal: { ...prev.mal, fa: false },
+                    }));
+                    setActiveLesionId(null);
+                    showToast('Fibrillation auriculaire arrêtée');
+                  }}
+                  onClearOcclusion={(lesion) => {
+                    setParams((prev) => {
+                      if (lesion === 'coro-iva' || lesion === 'coro-cx' || lesion === 'coro-cd') {
+                        const k = lesion.replace('coro-', '') as 'iva' | 'cx' | 'cd';
+                        return {
+                          ...prev,
+                          mal: { ...prev.mal, idm: false },
+                          act: { ...prev.act, [k]: null },
+                          plaque: prev.plaque >= 6 ? 4 : prev.plaque,
+                        };
+                      }
+                      if (lesion === 'pulm-emb') {
+                        return {
+                          ...prev,
+                          fail: prev.fail === 'ap' ? null : prev.fail,
+                          act: { ...prev.act, ap: null },
+                        };
+                      }
+                      if (lesion === 'ivc-clot') {
+                        return {
+                          ...prev,
+                          fail: prev.fail === 'vcaves' ? null : prev.fail,
+                          act: { ...prev.act, vcaves: null },
+                        };
+                      }
+                      if (lesion === 'avc-clot') {
+                        return { ...prev, mal: { ...prev.mal, avc: false } };
+                      }
+                      if (lesion === 'leg-clot') {
+                        return {
+                          ...prev,
+                          ischJambe: false,
+                          plaque: prev.plaque >= 6 ? 4 : prev.plaque,
+                        };
+                      }
+                      return prev;
+                    });
+                    setBannerMsg(null);
+                    setActiveLesionId(null);
+                    showToast('Artère / vaisseau reperfusé');
+                  }}
+                  onOpenVesselSite={(site) => {
+                    setParams((prev) => ({ ...prev, site }));
+                    setActiveLesionId(null);
+                    handleSwitchTab('vaisseau');
+                  }}
+                  onAdvancePlaque={() => {
+                    handleSetPlaque(Math.min(6, params.plaque + 1));
+                  }}
+                  onDissolvePlaque={() => {
+                    handleSetPlaque(0);
+                    setActiveLesionId(null);
+                    showToast('Artère revenue à l’état sain (stade 0)');
+                  }}
+                  onToggleEffort={() => {
+                    setParams((prev) => ({ ...prev, effort: !prev.effort }));
+                  }}
+                  onRepairValve={(valve) => {
+                    setParams((prev) => ({
+                      ...prev,
+                      mal: valve === 'aortique' ? { ...prev.mal, ra: false } : prev.mal,
+                      act: { ...prev.act, [valve]: null },
+                    }));
+                    setActiveLesionId(null);
+                    showToast(`Valve ${valve} réparée / remplacée`);
+                  }}
+                  onOpenComponentModal={(cid) => {
+                    setModalCompId(cid);
+                    setActiveLesionId(null);
+                  }}
+                />
+              )}
+
               {/* Legend toggle */}
               <div className="absolute right-3 top-3 z-10 flex flex-col items-end gap-1.5">
                 <button
@@ -1853,7 +2203,7 @@ export default function App() {
                   {showLegend ? 'Masquer légende' : 'Légende'}
                 </button>
                 {showLegend && (
-                  <div className="w-56 rounded-lg border border-[var(--line2)] bg-[#090e1c]/95 p-2.5 text-[11px] space-y-1 text-[var(--muted)] shadow-xl">
+                  <div className="w-60 rounded-lg border border-[var(--line2)] bg-[#090e1c]/95 p-2.5 text-[11px] space-y-1 text-[var(--muted)] shadow-xl">
                     <div className="flex items-center gap-2">
                       <span className="h-2.5 w-2.5 rounded-full bg-red-500" />
                       <span>Sang oxygéné (artériel)</span>
@@ -1863,8 +2213,12 @@ export default function App() {
                       <span>Sang pauvre en O₂ (veineux)</span>
                     </div>
                     <div className="flex items-center gap-2">
-                      <span className="h-2.5 w-2.5 rounded-full bg-amber-400" />
-                      <span>Caillot / calcification / nodal</span>
+                      <span className="h-2.5 w-2.5 rounded-full bg-cyan-400" />
+                      <span>Tissu nodal électrique (niv. 2–3)</span>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <span className="h-2.5 w-2.5 rounded-full bg-red-800 ring-1 ring-amber-400" />
+                      <span>Caillot / plaque / calcification (cliquable)</span>
                     </div>
                     <div className="flex items-center gap-2">
                       <span className="h-2.5 w-2.5 rounded-full bg-emerald-400" />
@@ -1875,153 +2229,8 @@ export default function App() {
               </div>
             </div>
 
-            {/* Direct Quick-Test & Medication Lab Strip (always accessible right on stage) */}
-            <div className="flex flex-wrap items-center justify-between gap-2 border-t border-[var(--line)] bg-[#0b1325] px-3 py-1.5">
-              <div className="flex flex-wrap items-center gap-1.5">
-                <span className="text-[10.5px] font-bold uppercase tracking-wider text-[var(--dim)] mr-0.5">
-                  Accès direct :
-                </span>
-                <button
-                  type="button"
-                  onClick={() =>
-                    handleQuickAction(
-                      'aortique',
-                      actOf('aortique', params) === 'stenose' ? null : 'stenose'
-                    )
-                  }
-                  className={`rounded-md border px-2 py-0.5 text-[11px] font-semibold transition ${
-                    actOf('aortique', params) === 'stenose' || params.mal.ra
-                      ? 'border-amber-400/70 bg-amber-500/20 text-amber-100'
-                      : 'border-[var(--line)] bg-[var(--card)] text-[var(--muted)] hover:text-[var(--txt)]'
-                  }`}
-                >
-                  Valve obstruée
-                </button>
-                <button
-                  type="button"
-                  onClick={() =>
-                    handleQuickAction(
-                      'vg',
-                      actOf('vg', params) === 'faible' ? null : 'faible'
-                    )
-                  }
-                  className={`rounded-md border px-2 py-0.5 text-[11px] font-semibold transition ${
-                    actOf('vg', params) === 'faible' || params.mal.ic
-                      ? 'border-amber-400/70 bg-amber-500/20 text-amber-100'
-                      : 'border-[var(--line)] bg-[var(--card)] text-[var(--muted)] hover:text-[var(--txt)]'
-                  }`}
-                >
-                  VG affaibli
-                </button>
-                <button
-                  type="button"
-                  onClick={() =>
-                    setParams((prev) => ({
-                      ...prev,
-                      mal: { ...prev.mal, hta: !prev.mal.hta },
-                    }))
-                  }
-                  className={`rounded-md border px-2 py-0.5 text-[11px] font-semibold transition ${
-                    params.mal.hta
-                      ? 'border-red-400/70 bg-red-500/20 text-red-100'
-                      : 'border-[var(--line)] bg-[var(--card)] text-[var(--muted)] hover:text-[var(--txt)]'
-                  }`}
-                >
-                  HTA
-                </button>
-                <button
-                  type="button"
-                  onClick={() =>
-                    setParams((prev) => ({ ...prev, effort: !prev.effort }))
-                  }
-                  className={`rounded-md border px-2 py-0.5 text-[11px] font-semibold transition ${
-                    params.effort
-                      ? 'border-sky-400/70 bg-sky-500/25 text-sky-100'
-                      : 'border-[var(--line)] bg-[var(--card)] text-[var(--muted)] hover:text-[var(--txt)]'
-                  }`}
-                >
-                  {params.effort ? 'Effort actif' : 'Repos ↔ Effort'}
-                </button>
-                <span className="text-[var(--line2)]">|</span>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setCompareUntreated(false);
-                    setParams((prev) => ({
-                      ...prev,
-                      mal: prev.asso === 'amlo-peri' ? prev.mal : { ...prev.mal, hta: true },
-                      asso: prev.asso === 'amlo-peri' ? null : 'amlo-peri',
-                    }));
-                  }}
-                  className={`rounded-md border px-2 py-0.5 text-[11px] font-semibold transition ${
-                    params.asso === 'amlo-peri' && !compareUntreated
-                      ? 'border-emerald-400/70 bg-emerald-500/20 text-emerald-100'
-                      : 'border-[var(--line)] bg-[var(--card)] text-[var(--muted)] hover:text-[var(--txt)]'
-                  }`}
-                >
-                  Amloperin®
-                </button>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setCompareUntreated(false);
-                    setParams((prev) => ({
-                      ...prev,
-                      mal: prev.asso === 'peri-inda-amlo' ? prev.mal : { ...prev.mal, hta: true },
-                      asso: prev.asso === 'peri-inda-amlo' ? null : 'peri-inda-amlo',
-                    }));
-                  }}
-                  className={`rounded-md border px-2 py-0.5 text-[11px] font-semibold transition ${
-                    params.asso === 'peri-inda-amlo' && !compareUntreated
-                      ? 'border-emerald-400/70 bg-emerald-500/20 text-emerald-100'
-                      : 'border-[var(--line)] bg-[var(--card)] text-[var(--muted)] hover:text-[var(--txt)]'
-                  }`}
-                >
-                  Tensoplus®
-                </button>
-
-                {/* Inline strength switcher when Amloperin or Tensoplus is active */}
-                {params.asso && C.associations[params.asso] && (
-                  <select
-                    aria-label="Dosage de l’association"
-                    value={params.pres[params.asso] || C.associations[params.asso].presentations[0].id}
-                    onChange={(e) => {
-                      const aid = params.asso!;
-                      setCompareUntreated(false);
-                      setParams((prev) => ({
-                        ...prev,
-                        pres: { ...prev.pres, [aid]: e.target.value },
-                      }));
-                    }}
-                    className="rounded-md border border-emerald-400/45 bg-emerald-950/40 px-1.5 py-0.5 text-[11px] font-medium text-emerald-100"
-                  >
-                    {C.associations[params.asso].presentations.map((pr) => (
-                      <option key={pr.id} value={pr.id} className="bg-slate-900 text-slate-100">
-                        {pr.nom}
-                      </option>
-                    ))}
-                  </select>
-                )}
-              </div>
-
-              {trtImpact && (
-                <button
-                  type="button"
-                  onClick={() => setCompareUntreated((v) => !v)}
-                  className={`inline-flex items-center gap-1 rounded-md border px-2.5 py-0.5 text-[11px] font-semibold transition ${
-                    compareUntreated
-                      ? 'border-amber-400/70 bg-amber-500/25 text-amber-100'
-                      : 'border-sky-400/45 bg-sky-500/15 text-sky-200 hover:bg-sky-500/25'
-                  }`}
-                >
-                  <Eye className="h-3 w-3" />
-                  <span>{compareUntreated ? 'Vue : Sans traitement' : 'Comparer sans traitement'}</span>
-                </button>
-              )}
-            </div>
-
-            {/* Vaisseau quick-step strip */}
-            {tab === 'vaisseau' && (
+            {/* Vaisseau quick-step strip (Niveau 2+) */}
+            {tab === 'vaisseau' && level >= 2 && (
               <div className="flex flex-wrap items-center justify-between gap-2 border-t border-[var(--line)] bg-[var(--card)] px-3 py-1.5">
                 <div className="flex items-center gap-1.5 text-[11px]">
                   <span className="font-semibold text-[var(--muted)]">Athérosclérose :</span>
@@ -2054,8 +2263,8 @@ export default function App() {
               </div>
             )}
 
-            {/* Timeline Beat Scrubber */}
-            {(tab === 'coeur' || tab === 'vaisseau') && (
+            {/* Timeline Beat Scrubber (Niveau 2+) */}
+            {(tab === 'coeur' || tab === 'vaisseau') && level >= 2 && (
               <div className="flex flex-wrap items-center gap-2 border-t border-[var(--line)] bg-[#0b1120] px-3 py-1.5">
                 <div className="flex items-center gap-1">
                   {phaseBtns.map((pb) => (
@@ -2138,7 +2347,7 @@ export default function App() {
                 <button
                   type="button"
                   onClick={handleTogglePlay}
-                  className="inline-flex items-center gap-1.5 rounded-lg border border-[var(--line2)] bg-[var(--card)] px-3 py-1 text-[12px] font-semibold text-[var(--txt)] hover:border-sky-400"
+                  className="inline-flex items-center gap-1.5 rounded-lg border border-[var(--line2)] bg-[var(--card)] px-3 py-1 text-[12px] font-semibold text-[var(--txt)] hover:border-sky-400 whitespace-nowrap"
                 >
                   {playing ? <Pause className="h-3.5 w-3.5" /> : <Play className="h-3.5 w-3.5" />}
                   {playing ? 'Pause' : 'Lecture'}
@@ -2147,7 +2356,7 @@ export default function App() {
                 <button
                   type="button"
                   onClick={handleToggleSound}
-                  className={`inline-flex items-center gap-1 rounded-lg border px-2.5 py-1 text-[12px] font-semibold transition ${
+                  className={`inline-flex items-center gap-1 rounded-lg border px-2.5 py-1 text-[12px] font-semibold transition whitespace-nowrap ${
                     soundEnabled
                       ? 'border-emerald-400/60 bg-emerald-500/20 text-emerald-100'
                       : 'border-[var(--line)] bg-[var(--card)] text-[var(--muted)] hover:text-[var(--txt)]'
@@ -2178,11 +2387,43 @@ export default function App() {
                   ))}
                 </div>
 
+                {appMode === 'libre' && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setActiveExId('personnalise');
+                      setParams((prev) => ({ ...prev, effort: !prev.effort }));
+                    }}
+                    className={`rounded-lg border px-2.5 py-1 text-[11px] font-semibold transition whitespace-nowrap ${
+                      params.effort
+                        ? 'border-sky-400/70 bg-sky-500/25 text-sky-100'
+                        : 'border-[var(--line)] bg-[var(--card)] text-[var(--muted)] hover:text-[var(--txt)]'
+                    }`}
+                  >
+                    {params.effort ? 'Effort actif' : 'Repos ↔ Effort'}
+                  </button>
+                )}
+
+                {trtImpact && (
+                  <button
+                    type="button"
+                    onClick={() => setCompareUntreated((v) => !v)}
+                    className={`inline-flex items-center gap-1 rounded-lg border px-2.5 py-1 text-[11px] font-semibold transition whitespace-nowrap ${
+                      compareUntreated
+                        ? 'border-amber-400/70 bg-amber-500/25 text-amber-100'
+                        : 'border-sky-400/45 bg-sky-500/15 text-sky-200 hover:bg-sky-500/25'
+                    }`}
+                  >
+                    <Eye className="h-3 w-3" />
+                    <span>{compareUntreated ? 'Vue : Sans traitement' : 'Comparer sans trt'}</span>
+                  </button>
+                )}
+
                 <button
                   type="button"
                   onClick={handleResetAll}
                   title="Réinitialiser (R)"
-                  className="inline-flex items-center gap-1 rounded-lg border border-[var(--line)] bg-[var(--card)] px-2.5 py-1 text-[11px] font-semibold text-[var(--muted)] hover:text-[var(--txt)]"
+                  className="inline-flex items-center gap-1 rounded-lg border border-[var(--line)] bg-[var(--card)] px-2.5 py-1 text-[11px] font-semibold text-[var(--muted)] hover:text-[var(--txt)] whitespace-nowrap"
                 >
                   <RotateCcw className="h-3.5 w-3.5" />
                   <span className="hidden sm:inline">Réinitialiser</span>
@@ -2217,6 +2458,7 @@ export default function App() {
             moment={storyMoment}
             storyPlaying={storyPlaying}
             storyAutoPause={storyAutoPause}
+            storyAlternate={storyAlternate}
             inspectionPaused={inspectionPaused}
             isRecordingVideo={isRecordingVideo}
             recordingSeconds={recordingSeconds}
@@ -2226,48 +2468,130 @@ export default function App() {
             onStepNext={handleStepNext}
             onToggleStoryPlay={handleToggleStoryPlay}
             onToggleAutoPause={() => setStoryAutoPause((v) => !v)}
+            onToggleAlternate={() => {
+              setStoryAlternate((v) => !v);
+              alternateDoneRef.current = false;
+            }}
             onInspectZone={handleInspectZone}
             onCapturePng={handleCapturePng}
             onToggleVideoRecord={handleToggleVideoRecord}
           />
 
-          {/* Bottom Explanation + Vitals / Charts Deck */}
+          {/* Bottom Explanation + Targeted Treatment / Vitals / Charts Deck */}
           <div className="grid grid-cols-1 gap-3 xl:grid-cols-[1.15fr_1fr]">
-            {/* Explanation Card */}
-            <div className="rounded-xl border border-[var(--line)] bg-[var(--panel)] p-4 space-y-2">
-              <div className="flex flex-wrap items-center justify-between gap-2">
-                <h2 className="text-[15px] font-semibold text-[var(--txt)]">{expl.title}</h2>
-                <span className="mono text-[11px] text-[var(--accent)]">
-                  {rythmeName(computed)}
-                </span>
-              </div>
-
-              {expl.status && (
-                <div className="rounded-md border border-amber-400/35 bg-amber-950/25 px-2.5 py-1.5 text-[12px] font-medium text-amber-200">
-                  {expl.status}
+            <div className="flex flex-col gap-3">
+              {/* Explanation Card */}
+              <div className="rounded-xl border border-[var(--line)] bg-[var(--panel)] p-4 space-y-2">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <h2 className="text-[15px] font-semibold text-[var(--txt)]">{expl.title}</h2>
+                  <span className="mono text-[11px] text-[var(--accent)]">
+                    {rythmeName(computed)}
+                  </span>
                 </div>
-              )}
 
-              <div className="space-y-1.5 text-[13px] leading-relaxed text-[var(--txt)]">
-                {expl.paragraphs.map((para, idx) => (
-                  <p key={idx} className={idx > 0 ? 'text-[var(--muted)]' : ''}>
-                    {para}
-                  </p>
-                ))}
-              </div>
+                {expl.status && (
+                  <div className="rounded-md border border-amber-400/35 bg-amber-950/25 px-2.5 py-1.5 text-[12px] font-medium text-amber-200">
+                    {expl.status}
+                  </div>
+                )}
 
-              {level >= 2 && expl.why && (
-                <div className="rounded-lg border border-[var(--line)] bg-[var(--card)] p-2.5 text-[12px] leading-relaxed text-[var(--muted)]">
-                  <span className="font-semibold text-sky-300">Pourquoi ? </span>
-                  {expl.why}
-                </div>
-              )}
-
-              {level === 3 && (
-                <div className="mono space-y-0.5 rounded-lg border border-[var(--line)] bg-[var(--bg)] p-2.5 text-[11px] text-[var(--muted)]">
-                  {expl.xpLines.map((line, i) => (
-                    <div key={i}>{line}</div>
+                <div className="space-y-1.5 text-[13px] leading-relaxed text-[var(--txt)]">
+                  {expl.paragraphs.map((para, idx) => (
+                    <p key={idx} className={idx > 0 ? 'text-[var(--muted)]' : ''}>
+                      {para}
+                    </p>
                   ))}
+                </div>
+
+                {level >= 2 && expl.why && (
+                  <div className="rounded-lg border border-[var(--line)] bg-[var(--card)] p-2.5 text-[12px] leading-relaxed text-[var(--muted)]">
+                    <span className="font-semibold text-sky-300">Pourquoi ? </span>
+                    {expl.why}
+                  </div>
+                )}
+
+                {level === 3 && (
+                  <div className="mono space-y-0.5 rounded-lg border border-[var(--line)] bg-[var(--bg)] p-2.5 text-[11px] text-[var(--muted)]">
+                    {expl.xpLines.map((line, i) => (
+                      <div key={i}>{line}</div>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              {/* Targeted Treatment Card Directly Under Explanation */}
+              {activeProtocol && (
+                <div className="rounded-xl border border-emerald-400/35 bg-[var(--panel)] p-3.5 space-y-2.5">
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <div className="flex items-center gap-2 min-w-0">
+                      <Pill className="h-4 w-4 text-emerald-300 shrink-0" />
+                      <div className="min-w-0">
+                        <div className="text-[10.5px] font-bold uppercase tracking-wider text-emerald-300">
+                          Conduite & traitement ciblé
+                        </div>
+                        <div className="text-[13px] font-semibold text-[var(--txt)] truncate">
+                          {activeProtocol.conditionTitle}
+                        </div>
+                      </div>
+                    </div>
+
+                    <button
+                      type="button"
+                      onClick={handleApplyTargetedProtocol}
+                      className={`inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-[11.5px] font-bold whitespace-nowrap shrink-0 transition ${
+                        protocolApplied
+                          ? 'border border-emerald-400/60 bg-emerald-500/20 text-emerald-200'
+                          : 'bg-emerald-400 text-slate-950 hover:bg-emerald-300'
+                      }`}
+                    >
+                      <CheckCircle2 className="h-3.5 w-3.5" />
+                      <span>
+                        {protocolApplied ? 'Protocole actif ✓' : 'Appliquer le protocole'}
+                      </span>
+                    </button>
+                  </div>
+
+                  <p className="text-[12px] leading-relaxed text-[var(--muted)]">
+                    {activeProtocol.summary}
+                  </p>
+
+                  <div className="flex flex-wrap items-center justify-between gap-2 pt-0.5">
+                    <div className="flex flex-wrap gap-1.5 text-[11px]">
+                      {activeProtocol.classes.map((cls, idx) => (
+                        <span
+                          key={idx}
+                          className="rounded-md border border-[var(--line)] bg-[var(--card)] px-2 py-0.5 font-medium text-[var(--txt)]"
+                        >
+                          {cls}
+                        </span>
+                      ))}
+                    </div>
+
+                    <div className="flex items-center gap-1 text-[11px] shrink-0">
+                      <button
+                        type="button"
+                        onClick={() => handleChangeTimelineBranch('untreated')}
+                        className={`rounded-md border px-2 py-1 font-semibold whitespace-nowrap ${
+                          timelineBranch === 'untreated'
+                            ? 'border-red-400/60 bg-red-500/20 text-red-100'
+                            : 'border-[var(--line)] bg-[var(--card)] text-[var(--muted)] hover:text-[var(--txt)]'
+                        }`}
+                      >
+                        Voir sans traitement
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => handleChangeTimelineBranch('treated')}
+                        className={`rounded-md border px-2 py-1 font-semibold whitespace-nowrap ${
+                          timelineBranch === 'treated'
+                            ? 'border-emerald-400/60 bg-emerald-500/20 text-emerald-100'
+                            : 'border-[var(--line)] bg-[var(--card)] text-[var(--muted)] hover:text-[var(--txt)]'
+                        }`}
+                      >
+                        Voir avec traitement
+                      </button>
+                    </div>
+                  </div>
                 </div>
               )}
             </div>
@@ -2514,6 +2838,16 @@ export default function App() {
 
       <ShortcutsModal open={showKeys} onClose={() => setShowKeys(false)} />
       <SourcesModal open={showSources} onClose={() => setShowSources(false)} />
+
+      {toastMsg && (
+        <div
+          role="status"
+          aria-live="polite"
+          className="pointer-events-none fixed bottom-4 right-4 z-50 rounded-lg border border-emerald-400/50 bg-[#07131d]/95 px-3 py-2 text-[12px] font-medium text-emerald-100 shadow-2xl"
+        >
+          {toastMsg}
+        </div>
+      )}
     </div>
   );
 }

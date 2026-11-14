@@ -25,6 +25,7 @@ import type {
   ComponentId,
   ComputedResult,
   DynamicState,
+  SceneLesionId,
   SimParams,
   ViewLevel,
   VisualStoryOverlay,
@@ -88,7 +89,46 @@ function flowDraw(
   }
 }
 
-export function coeurHit(x: number, y: number): ComponentId | null {
+export function coeurLesionHit(
+  x: number,
+  y: number,
+  p: SimParams,
+  r: ComputedResult,
+  story?: VisualStoryOverlay
+): SceneLesionId | null {
+  const showFaClot = p.mal.fa && (!r.tr.anticoagulant || (story?.clotProgress ?? 0.5) > 0.14);
+  if (showFaClot && Math.hypot(x - 718, y - 224) < 22) return 'fa-clot';
+  if (r.pulmEmb && Math.hypot(x - 620, y - 134) < 24) return 'pulm-emb';
+  if (r.ivcBlock && Math.hypot(x - 215, y - 520) < 24) return 'ivc-clot';
+
+  for (const k of ['iva', 'cx', 'cd'] as const) {
+    if (r.zoneIDM === k || actOf(k, p) === 'bouche') {
+      const pt = CORO[k].pts[1];
+      if (Math.hypot(x - pt[0], y - pt[1]) < 18) return `coro-${k}` as SceneLesionId;
+    }
+  }
+
+  if ((r.surfAo < 1.5 || actOf('aortique', p) === 'stenose') && Math.hypot(x - 528, y - 325) < 20) {
+    return 'calc-aortique';
+  }
+  if (actOf('mitrale', p) === 'stenose' && Math.hypot(x - 641, y - 360) < 26) {
+    return 'calc-mitrale';
+  }
+  if (actOf('tricuspide', p) === 'stenose' && Math.hypot(x - 385, y - 355) < 26) {
+    return 'calc-tricuspide';
+  }
+  if (actOf('pulmonaire', p) === 'stenose' && Math.hypot(x - 476, y - 313) < 18) {
+    return 'calc-pulmonaire';
+  }
+  return null;
+}
+
+export function coeurHit(
+  x: number,
+  y: number,
+  level: ViewLevel = 3,
+  p?: SimParams
+): ComponentId | null {
   const order: ComponentId[] = [
     'sinusal',
     'nav',
@@ -110,6 +150,13 @@ export function coeurHit(x: number, y: number): ComponentId | null {
     'vpulm',
   ];
   for (const id of order) {
+    if (
+      level === 1 &&
+      (id === 'sinusal' || id === 'nav' || id === 'his') &&
+      (!p || !actOf(id, p))
+    ) {
+      continue;
+    }
     const h = COMP[id].hit;
     if (h.pt && Math.hypot(x - h.pt[0], y - h.pt[1]) < (h.r || 18)) return id;
     if (h.seg && distPoly([x, y], h.seg) < (h.w || 12)) return id;
@@ -284,7 +331,7 @@ export function drawCoeur({
     c.restore();
   }
 
-  // FA flutter + LAA thrombus
+  // FA flutter rings
   if (!r.atriaOK) {
     c.strokeStyle = 'rgba(251,191,36,0.55)';
     c.lineWidth = 1.6;
@@ -301,12 +348,6 @@ export function drawCoeur({
         c.stroke();
       }
     });
-    if (p.mal.fa) {
-      c.fillStyle = r.tr.anticoagulant ? 'rgba(251,191,36,0.28)' : '#fbbf24';
-      c.beginPath();
-      c.arc(718, 224, r.tr.anticoagulant ? 4 : 11, 0, Math.PI * 2);
-      c.fill();
-    }
   }
 
   // Stenotic high-velocity turbulent jets (when valves are obstructed)
@@ -399,19 +440,20 @@ export function drawCoeur({
     c.fill();
   }
 
-  // Obstruction clots
-  if (r.pulmEmb) {
-    c.fillStyle = '#fbbf24';
+  // Obstruction clots (crimson-amber thrombi with clickable halo)
+  const drawThrombus = (cx: number, cy: number, rad: number) => {
+    c.save();
+    c.fillStyle = '#991b1b';
+    c.strokeStyle = '#fbbf24';
+    c.lineWidth = 2.4;
     c.beginPath();
-    c.arc(620, 134, 15, 0, Math.PI * 2);
+    c.arc(cx, cy, rad, 0, Math.PI * 2);
     c.fill();
-  }
-  if (r.ivcBlock) {
-    c.fillStyle = '#fbbf24';
-    c.beginPath();
-    c.arc(215, 520, 15, 0, Math.PI * 2);
-    c.fill();
-  }
+    c.stroke();
+    c.restore();
+  };
+  if (r.pulmEmb) drawThrombus(620, 134, 15);
+  if (r.ivcBlock) drawThrombus(215, 520, 15);
 
   // Blood particles along all routes including BOTH pulmonary artery branches
   const fSpd = 120 * clamp(r.dc / DC_N, 0.25, 2.4);
@@ -511,20 +553,26 @@ export function drawCoeur({
     }
   }
 
-  // Coronary arteries
+  // Coronary arteries (occlusion thrombi shown only when blocked)
   (Object.keys(CORO) as ('cd' | 'iva' | 'cx')[]).forEach((k) => {
     const bl = r.zoneIDM === k || actOf(k, p) === 'bouche';
     prd(CORO[k].pts, bl ? '#64748b' : '#f43f5e', 5.5);
     if (bl) {
       const pt = CORO[k].pts[1];
-      c.fillStyle = '#fbbf24';
+      c.save();
+      c.fillStyle = '#991b1b';
+      c.strokeStyle = '#fbbf24';
+      c.lineWidth = 2;
       c.beginPath();
-      c.arc(pt[0], pt[1], 7.5, 0, Math.PI * 2);
+      c.arc(pt[0], pt[1], 8.5, 0, Math.PI * 2);
       c.fill();
+      c.stroke();
+      c.restore();
     }
   });
 
-  // Nodal system
+  // Nodal conduction system: hidden in level 1 (Découvrir) unless actively blocked;
+  // rendered in electric cyan in levels 2 & 3 so it never mimics yellow clots/calcifications.
   const ia = lastBefore(clk.aEv, t);
   const la = ia >= 0 ? clk.aEv[ia] : null;
   const iv = lastBefore(clk.vEv, t);
@@ -536,20 +584,33 @@ export function drawCoeur({
   const hisBl = !!actOf('his', p);
 
   const nod = (pt: Point2D, rad: number, lit: boolean, bl: boolean) => {
-    c.fillStyle = bl ? '#64748b' : lit ? '#fef08a' : '#f59e0b';
+    c.save();
+    c.fillStyle = bl ? '#64748b' : lit ? '#cffafe' : '#06b6d4';
+    c.strokeStyle = bl ? '#f87171' : lit ? '#22d3ee' : 'rgba(103,232,249,0.75)';
+    c.lineWidth = bl ? 2 : 1.5;
     c.beginPath();
     c.arc(pt[0], pt[1], rad, 0, Math.PI * 2);
     c.fill();
+    c.stroke();
+    c.restore();
   };
 
-  c.strokeStyle = hisBl ? '#64748b' : vAge < 0.14 ? '#fef08a' : 'rgba(250,204,21,0.55)';
-  c.lineWidth = 3.5;
-  [NODAL.his.pts, NODAL.his.bd, NODAL.his.bg].forEach((pts) => {
-    path2D(c, pts);
-    c.stroke();
-  });
-  nod(NODAL.sinusal.p, 11, r.rythme === 'sinus' && pAge < 0.14, nsBl);
-  nod(NODAL.nav.p, 9, pAge >= 0.06 && pAge < 0.18 && !navBl, navBl);
+  if (level >= 2 || hisBl) {
+    c.save();
+    c.strokeStyle = hisBl ? '#64748b' : vAge < 0.14 ? '#67e8f9' : 'rgba(34,211,238,0.48)';
+    c.lineWidth = 3;
+    [NODAL.his.pts, NODAL.his.bd, NODAL.his.bg].forEach((pts) => {
+      path2D(c, pts);
+      c.stroke();
+    });
+    c.restore();
+  }
+  if (level >= 2 || nsBl) {
+    nod(NODAL.sinusal.p, 9.5, r.rythme === 'sinus' && pAge < 0.14, nsBl);
+  }
+  if (level >= 2 || navBl) {
+    nod(NODAL.nav.p, 8, pAge >= 0.06 && pAge < 0.18 && !navBl, navBl);
+  }
 
   // Hover outline
   if (hoverId && COMP[hoverId]) {
@@ -597,12 +658,12 @@ export function drawCoeur({
       lbl(642, 374, 'Mitrale', '#fde68a');
       lbl(525, 308, 'Aortique', '#fde68a');
       lbl(426, 304, 'Pulm.', '#fde68a');
-      lbl(266, 198, 'N. sinusal', '#fde047');
+      lbl(266, 198, 'N. sinusal', '#67e8f9');
       lbl(565, 588, 'IVA', '#fda4af');
     }
     if (level === 3) {
-      lbl(490, 355, 'NAV', '#fde047');
-      lbl(516, 435, 'His', '#fde047');
+      lbl(490, 355, 'NAV', '#67e8f9');
+      lbl(516, 435, 'His', '#67e8f9');
     }
   }
 
@@ -674,13 +735,14 @@ export function drawCoeur({
   }
   c.restore();
 
-  // Atrial clot visualization in LA appendage for FA storyboard & anticoagulation lysis
-  if (p.mal.fa && (story?.clotProgress ?? 0) > 0.05) {
-    const clotR = clamp(16 * (story?.clotProgress ?? 0.6) * (1 - (story?.treatmentHeal ?? 0) * 0.8), 4, 18);
+  // Atrial clot visualization in LA appendage for FA & anticoagulation lysis (sole source of truth)
+  const faClotStrength = story ? story.clotProgress * (1 - story.treatmentHeal * 0.85) : r.tr.anticoagulant ? 0.1 : 0.72;
+  if (p.mal.fa && (!r.tr.anticoagulant || faClotStrength > 0.14)) {
+    const clotR = clamp(15 * (r.tr.anticoagulant ? faClotStrength : Math.max(0.42, faClotStrength)), 4, 17);
     c.save();
-    c.fillStyle = r.tr.anticoagulant ? 'rgba(251,191,36,0.45)' : '#b91c1c';
+    c.fillStyle = r.tr.anticoagulant ? 'rgba(185,28,28,0.45)' : '#991b1b';
     c.strokeStyle = '#fbbf24';
-    c.lineWidth = 2;
+    c.lineWidth = 2.2;
     c.beginPath();
     c.arc(718, 224, clotR, 0, Math.PI * 2);
     c.fill();
@@ -720,4 +782,11 @@ export function drawCoeur({
       c.restore();
     }
   }
+
+  c.save();
+  c.font = '500 10px "IBM Plex Mono", ui-monospace, monospace';
+  c.fillStyle = 'rgba(148, 163, 184, 0.28)';
+  c.textAlign = 'left';
+  c.fillText('Atelier du Cœur · Dr O. Sow', 14, H - 12);
+  c.restore();
 }

@@ -4,7 +4,7 @@ export type DisplayProfile = 'complet' | 'equilibre' | 'leger';
 export type Heart3DMode = 'exterieur' | 'coupe' | 'transparent';
 export type VesselSiteId = 'aorte' | 'carotide' | 'coronaire' | 'jambe';
 export type AppMode = 'cas' | 'libre';
-export type TimelineHorizon = 0 | 1 | 2 | 3;
+export type TimelineHorizon = 0 | 1 | 2 | 3 | 4;
 export type TimelineBranch = 'treated' | 'untreated';
 export type HeartChartMode = 'wiggers' | 'pv' | 'both';
 
@@ -215,6 +215,8 @@ export type FocusZoneId =
   | 'embole'
   | 'cerveau'
   | 'coronaire'
+  | 'rein'
+  | 'hta-organes'
   | 'og'
   | 'vg'
   | 'vd'
@@ -231,4 +233,20 @@ export interface VisualStoryOverlay {
   treatmentHeal: number;
   inspectionPaused: boolean;
 }
+
+export type SceneLesionId =
+  | 'fa-clot'
+  | 'coro-iva'
+  | 'coro-cx'
+  | 'coro-cd'
+  | 'pulm-emb'
+  | 'ivc-clot'
+  | 'avc-clot'
+  | 'leg-clot'
+  | 'calc-aortique'
+  | 'calc-mitrale'
+  | 'calc-tricuspide'
+  | 'calc-pulmonaire'
+  | 'vessel-plaque'
+  | 'vessel-thrombus';
 

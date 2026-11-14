@@ -10,6 +10,7 @@ import {
   HelpCircle,
   Pause,
   Play,
+  Repeat,
   SkipBack,
   SkipForward,
   Square,
@@ -319,6 +320,7 @@ interface ConsequenceTimelineDockProps {
   moment: StoryboardMoment;
   storyPlaying: boolean;
   storyAutoPause: boolean;
+  storyAlternate: boolean;
   inspectionPaused: boolean;
   isRecordingVideo: boolean;
   recordingSeconds: number;
@@ -328,6 +330,7 @@ interface ConsequenceTimelineDockProps {
   onStepNext: () => void;
   onToggleStoryPlay: () => void;
   onToggleAutoPause: () => void;
+  onToggleAlternate: () => void;
   onInspectZone: () => void;
   onCapturePng: () => void;
   onToggleVideoRecord: () => void;
@@ -340,6 +343,7 @@ export const ConsequenceTimelineDock: React.FC<ConsequenceTimelineDockProps> = (
   moment,
   storyPlaying,
   storyAutoPause,
+  storyAlternate,
   inspectionPaused,
   isRecordingVideo,
   recordingSeconds,
@@ -349,6 +353,7 @@ export const ConsequenceTimelineDock: React.FC<ConsequenceTimelineDockProps> = (
   onStepNext,
   onToggleStoryPlay,
   onToggleAutoPause,
+  onToggleAlternate,
   onInspectZone,
   onCapturePng,
   onToggleVideoRecord,
@@ -407,7 +412,7 @@ export const ConsequenceTimelineDock: React.FC<ConsequenceTimelineDockProps> = (
                 : 'text-[var(--muted)] hover:text-[var(--txt)]'
             }`}
           >
-            Avec votre traitement
+            Avec traitement
           </button>
           <button
             type="button"
@@ -418,7 +423,7 @@ export const ConsequenceTimelineDock: React.FC<ConsequenceTimelineDockProps> = (
                 : 'text-[var(--muted)] hover:text-[var(--txt)]'
             }`}
           >
-            Sans traitement (évolution)
+            Sans traitement
           </button>
         </div>
       </div>
@@ -447,13 +452,13 @@ export const ConsequenceTimelineDock: React.FC<ConsequenceTimelineDockProps> = (
             }`}
           >
             {storyPlaying ? <Pause className="h-3 w-3" /> : <Play className="h-3 w-3" />}
-            <span>{storyPlaying ? 'Pause film' : step === 3 ? 'Rejouer le film' : 'Lancer le film'}</span>
+            <span>{storyPlaying ? 'Pause film' : step === 4 ? 'Rejouer le film' : 'Lancer le film'}</span>
           </button>
 
           <button
             type="button"
             onClick={onStepNext}
-            disabled={step === 3}
+            disabled={step === 4}
             className="inline-flex items-center gap-1 rounded-md border border-[var(--line)] bg-[var(--card)] px-2 py-1 text-[11px] font-semibold text-[var(--txt)] hover:border-sky-400/60 disabled:opacity-40 whitespace-nowrap shrink-0"
             title="Moment clé suivant"
           >
@@ -473,6 +478,21 @@ export const ConsequenceTimelineDock: React.FC<ConsequenceTimelineDockProps> = (
             title="Marquer une pause à chaque moment clé pour observer la zone"
           >
             Pause auto : {storyAutoPause ? 'ON' : 'OFF'}
+          </button>
+
+          <button
+            type="button"
+            onClick={onToggleAlternate}
+            aria-pressed={storyAlternate}
+            className={`inline-flex items-center gap-1 rounded-md border px-2 py-1 text-[11px] font-semibold whitespace-nowrap shrink-0 transition ${
+              storyAlternate
+                ? 'border-emerald-400/60 bg-emerald-500/15 text-emerald-200'
+                : 'border-[var(--line)] bg-[var(--card)] text-[var(--muted)] hover:text-[var(--txt)]'
+            }`}
+            title="Alterner automatiquement Sans traitement puis Avec traitement pendant le film"
+          >
+            <Repeat className="h-3 w-3" />
+            <span>Alterner 2 issues : {storyAlternate ? 'ON' : 'OFF'}</span>
           </button>
         </div>
 
@@ -518,8 +538,8 @@ export const ConsequenceTimelineDock: React.FC<ConsequenceTimelineDockProps> = (
         </div>
       </div>
 
-      {/* 4 chronological key-moment horizon buttons */}
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-1.5">
+      {/* 5 chronological key-moment horizon buttons */}
+      <div className="grid grid-cols-2 sm:grid-cols-5 gap-1.5">
         {TIMELINE_LABELS.map((item) => {
           const active = step === item.step;
           return (
@@ -545,7 +565,7 @@ export const ConsequenceTimelineDock: React.FC<ConsequenceTimelineDockProps> = (
       </div>
 
       {/* Key Moment Clinical Focus & Projected Organ Consequences */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 rounded-lg border border-[var(--line)] bg-[var(--card)] px-3 py-2 text-[12px]">
+      <div className="grid grid-cols-1 md:grid-cols-[1.2fr_1fr] md:items-center gap-2.5 rounded-lg border border-[var(--line)] bg-[var(--card)] px-3 py-2 text-[12px]">
         <div className="space-y-0.5 min-w-0">
           <div className="flex flex-wrap items-center gap-1.5 text-[11px] font-semibold text-sky-300">
             <span>{moment.label}</span>
@@ -556,9 +576,12 @@ export const ConsequenceTimelineDock: React.FC<ConsequenceTimelineDockProps> = (
             {moment.whatHappens}
           </p>
         </div>
-        <div className="mono flex flex-wrap gap-x-2.5 gap-y-0.5 text-[11px] text-[var(--txt)] sm:text-right shrink-0">
+        <div className="mono flex flex-wrap gap-x-3 gap-y-1 text-[11px] text-[var(--txt)] md:justify-end">
           {projection.consequences.map((c, i) => (
-            <span key={i} className={projection.severite === 'crit' ? 'text-red-200' : ''}>
+            <span
+              key={i}
+              className={projection.severite === 'crit' ? 'text-red-200 font-medium' : ''}
+            >
               {c}
             </span>
           ))}

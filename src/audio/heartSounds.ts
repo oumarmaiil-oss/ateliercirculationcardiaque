@@ -7,6 +7,7 @@ export interface HeartAudioEngine {
   ctx: AudioContext | null;
   noise: AudioBuffer | null;
   out: AudioNode | null;
+  streamDest: MediaStreamAudioDestinationNode | null;
   buf: Partial<Record<'b1' | 'b2', AudioBuffer>>;
   lastT: number;
 }
@@ -16,6 +17,7 @@ export function createAudioEngine(): HeartAudioEngine {
     ctx: null,
     noise: null,
     out: null,
+    streamDest: null,
     buf: {},
     lastT: 0,
   };
@@ -40,8 +42,21 @@ export function initAudio(snd: HeartAudioEngine): AudioContext | null {
   comp.threshold.value = -14;
   comp.ratio.value = 4;
   comp.connect(snd.ctx.destination);
+  if (typeof snd.ctx.createMediaStreamDestination === 'function') {
+    const streamDest = snd.ctx.createMediaStreamDestination();
+    comp.connect(streamDest);
+    snd.streamDest = streamDest;
+  }
   snd.out = comp;
   return snd.ctx;
+}
+
+export function getAudioCaptureTracks(snd: HeartAudioEngine): MediaStreamTrack[] {
+  const ctx = initAudio(snd);
+  if (ctx && ctx.state === 'suspended') {
+    ctx.resume().catch(() => {});
+  }
+  return snd.streamDest ? snd.streamDest.stream.getAudioTracks() : [];
 }
 
 function hsBuffer(ac: AudioContext, kind: 'b1' | 'b2'): AudioBuffer {

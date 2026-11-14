@@ -53,15 +53,15 @@ function makeTube(
 
 export function createHeart3D(
   container: HTMLElement,
-  onPick: (id: ComponentId | null) => void,
+  onPick: (id: string | null) => void,
   onHover: (id: ComponentId | null, clientX: number, clientY: number) => void
 ): Heart3DInstance {
   const vp = make3D({
     container,
     camPos: [0.3, 0.25, 6.2],
     target: [0, 0.05, 0],
-    onPick: (id) => onPick(id as ComponentId | null),
-    onHover: (id, x, y) => onHover(id as ComponentId | null, x, y),
+    onPick: (id) => onPick(id),
+    onHover: (id, x, y) => onHover(id && id.startsWith('lesion:') ? null : (id as ComponentId | null), x, y),
   });
 
   const bump = createTissueBumpTexture();
@@ -114,9 +114,11 @@ export function createHeart3D(
     roughness: 0.42,
   });
   const matFat = new THREE.MeshStandardMaterial({
-    color: 0xfbbf24,
-    roughness: 0.65,
+    color: 0x8f4754,
+    roughness: 0.78,
     metalness: 0.0,
+    transparent: true,
+    opacity: 0.55,
   });
   const matCoro = {
     iva: new THREE.MeshStandardMaterial({ color: 0xf43f5e, roughness: 0.35 }),
@@ -129,10 +131,10 @@ export function createHeart3D(
     side: THREE.DoubleSide,
   });
   const matClot = new THREE.MeshStandardMaterial({
-    color: 0xf59e0b,
-    emissive: 0x78350f,
-    emissiveIntensity: 0.35,
-    roughness: 0.5,
+    color: 0xb91c1c,
+    emissive: 0xd97706,
+    emissiveIntensity: 0.42,
+    roughness: 0.45,
   });
   const matIschemia = new THREE.MeshStandardMaterial({
     color: 0x64748b,
@@ -421,13 +423,13 @@ export function createHeart3D(
   const vAortic = makeSLValve([0.19, 0.36, 0.1], 'aortique');
   const vPulm = makeSLValve([-0.33, 0.38, 0.36], 'pulmonaire');
 
-  // Nodal conduction system
+  // Nodal conduction system (electric cyan so never confused with yellow clots)
   const makeNode = (pos: [number, number, number], rad: number, id: ComponentId) => {
     const m = new THREE.MeshStandardMaterial({
-      color: 0xf59e0b,
-      emissive: 0xf59e0b,
-      emissiveIntensity: 0.3,
-      roughness: 0.35,
+      color: 0x06b6d4,
+      emissive: 0x22d3ee,
+      emissiveIntensity: 0.35,
+      roughness: 0.32,
     });
     const mesh = new THREE.Mesh(new THREE.SphereGeometry(rad, 16, 12), m);
     mesh.position.set(...pos);
@@ -435,12 +437,12 @@ export function createHeart3D(
     vp.root.add(mesh);
     return { mesh, mat: m };
   };
-  const nSinusal = makeNode([-0.74, 0.96, 0.24], 0.085, 'sinusal');
-  const nNav = makeNode([-0.04, 0.28, 0.22], 0.075, 'nav');
+  const nSinusal = makeNode([-0.74, 0.96, 0.24], 0.075, 'sinusal');
+  const nNav = makeNode([-0.04, 0.28, 0.22], 0.065, 'nav');
   const hisMat = new THREE.MeshStandardMaterial({
-    color: 0xfacc15,
-    emissive: 0xfacc15,
-    emissiveIntensity: 0.2,
+    color: 0x22d3ee,
+    emissive: 0x0891b2,
+    emissiveIntensity: 0.25,
     roughness: 0.4,
   });
   const hisGrp = new THREE.Group();
@@ -451,7 +453,7 @@ export function createHeart3D(
         [-0.04, -0.1, 0.16],
         [-0.36, -0.68, 0.16],
       ],
-      0.024,
+      0.02,
       hisMat,
       14,
       6
@@ -461,7 +463,7 @@ export function createHeart3D(
         [-0.04, -0.1, 0.16],
         [0.34, -0.78, 0.08],
       ],
-      0.024,
+      0.02,
       hisMat,
       12,
       6
@@ -470,23 +472,29 @@ export function createHeart3D(
   tag(hisGrp, 'his');
   vp.root.add(hisGrp);
 
-  // Clot indicators (FA LAA, PE, IVC, coronary)
-  const clotFA = new THREE.Mesh(new THREE.SphereGeometry(0.11, 14, 10), matClot);
+  const tagLesion = <T extends THREE.Object3D>(obj: T, lesionId: string): T => {
+    obj.userData.pickId = `lesion:${lesionId}`;
+    vp.pickTargets.push(obj);
+    return obj;
+  };
+
+  // Clot indicators (FA LAA, PE, IVC, coronary) - directly clickable when visible
+  const clotFA = tagLesion(new THREE.Mesh(new THREE.SphereGeometry(0.11, 14, 10), matClot), 'fa-clot');
   clotFA.position.set(0.84, 0.8, 0.16);
   clotFA.visible = false;
   vp.root.add(clotFA);
 
-  const clotPE = new THREE.Mesh(new THREE.SphereGeometry(0.13, 14, 10), matClot);
+  const clotPE = tagLesion(new THREE.Mesh(new THREE.SphereGeometry(0.13, 14, 10), matClot), 'pulm-emb');
   clotPE.position.set(0.55, 1.24, -0.02);
   clotPE.visible = false;
   vp.root.add(clotPE);
 
-  const clotIVC = new THREE.Mesh(new THREE.SphereGeometry(0.13, 14, 10), matClot);
+  const clotIVC = tagLesion(new THREE.Mesh(new THREE.SphereGeometry(0.13, 14, 10), matClot), 'ivc-clot');
   clotIVC.position.set(-0.82, -0.8, -0.22);
   clotIVC.visible = false;
   vp.root.add(clotIVC);
 
-  const clotCoro = new THREE.Mesh(new THREE.SphereGeometry(0.065, 12, 10), matClot);
+  const clotCoro = tagLesion(new THREE.Mesh(new THREE.SphereGeometry(0.075, 12, 10), matClot), 'coro-iva');
   clotCoro.visible = false;
   vp.root.add(clotCoro);
 
@@ -521,18 +529,19 @@ export function createHeart3D(
     emissiveIntensity: 0.45,
     roughness: 0.38,
   });
-  const makeCalcRing = (pos: [number, number, number], rad: number) => {
+  const makeCalcRing = (pos: [number, number, number], rad: number, lesionId: string) => {
     const ring = new THREE.Mesh(new THREE.TorusGeometry(rad, 0.042, 10, 22), matCalc);
     ring.position.set(...pos);
     ring.rotation.x = Math.PI / 2;
     ring.visible = false;
+    tagLesion(ring, lesionId);
     vp.root.add(ring);
     return ring;
   };
-  const calcAo = makeCalcRing([0.19, 0.36, 0.1], 0.17);
-  const calcMi = makeCalcRing([0.48, 0.28, -0.02], 0.24);
-  const calcPu = makeCalcRing([-0.33, 0.38, 0.36], 0.15);
-  const calcTr = makeCalcRing([-0.52, 0.24, 0.08], 0.23);
+  const calcAo = makeCalcRing([0.19, 0.36, 0.1], 0.17, 'calc-aortique');
+  const calcMi = makeCalcRing([0.48, 0.28, -0.02], 0.24, 'calc-mitrale');
+  const calcPu = makeCalcRing([-0.33, 0.38, 0.36], 0.15, 'calc-pulmonaire');
+  const calcTr = makeCalcRing([-0.52, 0.24, 0.08], 0.23, 'calc-tricuspide');
 
   const jetStenMat = new THREE.MeshBasicMaterial({
     color: 0xfbbf24,
@@ -615,8 +624,8 @@ export function createHeart3D(
     { id: 'iva', text: 'IVA', pos: [0.3, -1.36, 0.76], minLvl: 2, col: '#fda4af' },
     { id: 'mitrale', text: 'Mitrale', pos: [1.02, 0.24, 0.25], minLvl: 2, col: '#fde68a' },
     { id: 'aortique', text: 'V. aortique', pos: [0.16, 0.56, 0.56], minLvl: 2, col: '#fde68a' },
-    { id: 'sinusal', text: 'N. sinusal', pos: [-1.34, 1.06, 0.28], minLvl: 2, col: '#fde047' },
-    { id: 'nav', text: 'NAV', pos: [-0.04, 0.2, 0.56], minLvl: 3, col: '#fde047' },
+    { id: 'sinusal', text: 'N. sinusal', pos: [-1.34, 1.06, 0.28], minLvl: 2, col: '#67e8f9' },
+    { id: 'nav', text: 'NAV', pos: [-0.04, 0.2, 0.56], minLvl: 3, col: '#67e8f9' },
   ];
   const labelSprites = labelsMeta.map((lm) => {
     const sp = makeTextSprite(lm.text, lm.col);
@@ -741,6 +750,7 @@ export function createHeart3D(
       else if (r.zoneIDM === 'cx') ischPatch.position.set(0.86, -0.25, 0.36);
       else ischPatch.position.set(-0.62, -0.5, 0.45);
       clotCoro.visible = true;
+      clotCoro.userData.pickId = `lesion:coro-${r.zoneIDM}`;
       if (r.zoneIDM === 'iva') clotCoro.position.set(0.02, -0.06, 0.88);
       else if (r.zoneIDM === 'cx') clotCoro.position.set(0.64, 0.28, 0.62);
       else clotCoro.position.set(-0.64, 0.2, 0.66);
@@ -749,9 +759,8 @@ export function createHeart3D(
       clotCoro.visible = false;
     }
 
-    // Clots
-    clotFA.visible = p.mal.fa;
-    clotFA.scale.setScalar(r.tr.anticoagulant ? 0.42 : 1);
+    // Clots (hidden completely when anticoagulated or absent)
+    clotFA.visible = p.mal.fa && !r.tr.anticoagulant;
     clotPE.visible = r.pulmEmb;
     clotIVC.visible = r.ivcBlock;
 
@@ -811,7 +820,7 @@ export function createHeart3D(
       jetIA.scale.set(pulse, 1, pulse);
     }
 
-    // Nodal activation glow
+    // Nodal activation glow (cyan in L2/L3; hidden in Découvrir L1 unless blocked)
     const ia = lastBefore(clk.aEv, t);
     const laEv = ia >= 0 ? clk.aEv[ia] : null;
     const iv = lastBefore(clk.vEv, t);
@@ -823,12 +832,19 @@ export function createHeart3D(
     const navBl = !!actOf('nav', p);
     const hisBl = !!actOf('his', p);
 
-    nSinusal.mat.color.setHex(nsBl ? 0x64748b : 0xf59e0b);
-    nSinusal.mat.emissiveIntensity = !nsBl && r.rythme === 'sinus' && pAge < 0.14 ? 1.8 : 0.25;
-    nNav.mat.color.setHex(navBl ? 0x64748b : 0xf59e0b);
-    nNav.mat.emissiveIntensity = !navBl && pAge >= 0.06 && pAge < 0.18 ? 1.8 : 0.25;
-    hisMat.color.setHex(hisBl ? 0x64748b : 0xfacc15);
-    hisMat.emissiveIntensity = !hisBl && vAge < 0.14 ? 1.6 : 0.2;
+    nSinusal.mesh.visible = opts.level >= 2 || nsBl;
+    nNav.mesh.visible = currentMode !== 'exterieur' && (opts.level >= 2 || navBl);
+    hisGrp.visible = currentMode !== 'exterieur' && (opts.level >= 2 || hisBl);
+
+    nSinusal.mat.color.setHex(nsBl ? 0x64748b : 0x06b6d4);
+    nSinusal.mat.emissive.setHex(nsBl ? 0xef4444 : 0x22d3ee);
+    nSinusal.mat.emissiveIntensity = nsBl ? 0.6 : r.rythme === 'sinus' && pAge < 0.14 ? 1.8 : 0.25;
+    nNav.mat.color.setHex(navBl ? 0x64748b : 0x06b6d4);
+    nNav.mat.emissive.setHex(navBl ? 0xef4444 : 0x22d3ee);
+    nNav.mat.emissiveIntensity = navBl ? 0.6 : pAge >= 0.06 && pAge < 0.18 ? 1.8 : 0.25;
+    hisMat.color.setHex(hisBl ? 0x64748b : 0x22d3ee);
+    hisMat.emissive.setHex(hisBl ? 0xef4444 : 0x0891b2);
+    hisMat.emissiveIntensity = hisBl ? 0.5 : vAge < 0.14 ? 1.5 : 0.2;
 
     // Blood particles along 3D CatmullRom curves
     const spd = 0.42 * clamp(r.dc / DC_N, 0.22, 2.4);

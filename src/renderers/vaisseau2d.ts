@@ -4,6 +4,7 @@ import { pressures, type CardiacClockState } from '../engine/clock';
 import { clamp, fmt, lerp } from '../engine/geometry2d';
 import type {
   ComputedResult,
+  SceneLesionId,
   SimParams,
   ViewLevel,
   VisualStoryOverlay,
@@ -20,6 +21,24 @@ export function createVaisseauState(): VaisseauRuntimeState {
     scroll: 0,
     lastT: 0,
   };
+}
+
+export function vaisseauLesionHit(
+  x: number,
+  y: number,
+  p: SimParams,
+  story?: VisualStoryOverlay
+): SceneLesionId | null {
+  const st = p.plaque;
+  if (st <= 0) return null;
+  const showClot = st === 6 || (story !== undefined && story.clotProgress > 0.25 && st >= 4);
+  if (showClot && Math.hypot((x - 440) / 1.8, y - 270) < 55) {
+    return 'vessel-thrombus';
+  }
+  if (x >= 260 && x <= 620 && y >= 215 && y <= 385) {
+    return 'vessel-plaque';
+  }
+  return null;
 }
 
 export interface DrawVaisseauArgs {
@@ -261,15 +280,17 @@ export function drawVaisseau({
     c.fill();
   }
 
-  // LDL particles in lumen
-  const nLdl = Math.round((r.ldl / 2) * 14);
-  c.fillStyle = '#fde047';
-  for (let i = 0; i < nLdl; i++) {
-    const x = (state.scroll * 0.72 + i * 67) % W;
-    const y = lumenT + 12 + ((i * 41) % Math.max(12, Math.floor(lumenB - lumenT - ph - 18)));
-    c.beginPath();
-    c.arc(x, y, 3.2, 0, Math.PI * 2);
-    c.fill();
+  // LDL particles in lumen: only render when dyslipidemia/plaque is active (never clutter normal healthy arteries)
+  if (p.mal.dyslipidemie || r.ldl > 1.15 || (level >= 3 && st > 0)) {
+    const nLdl = Math.round((r.ldl / 2) * 14);
+    c.fillStyle = '#fde047';
+    for (let i = 0; i < nLdl; i++) {
+      const x = (state.scroll * 0.72 + i * 67) % W;
+      const y = lumenT + 12 + ((i * 41) % Math.max(12, Math.floor(lumenB - lumenT - ph - 18)));
+      c.beginPath();
+      c.arc(x, y, 3, 0, Math.PI * 2);
+      c.fill();
+    }
   }
 
   // Labels & readout
@@ -360,4 +381,11 @@ export function drawVaisseau({
     c.fillText(`Inspection · ${story.focusLabel}`, px0 - 6, lumenT - 25);
     c.restore();
   }
+
+  c.save();
+  c.font = '500 10px "IBM Plex Mono", ui-monospace, monospace';
+  c.fillStyle = 'rgba(148, 163, 184, 0.28)';
+  c.textAlign = 'right';
+  c.fillText('Atelier du Cœur · Dr O. Sow', W - 16, 18);
+  c.restore();
 }

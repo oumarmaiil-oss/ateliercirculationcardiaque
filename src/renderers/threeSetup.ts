@@ -273,6 +273,15 @@ export function make3D({
   let downX = 0;
   let downY = 0;
 
+  const isObjVisible = (obj: THREE.Object3D): boolean => {
+    let cur: THREE.Object3D | null = obj;
+    while (cur) {
+      if (!cur.visible) return false;
+      cur = cur.parent;
+    }
+    return true;
+  };
+
   const raycastAt = (clientX: number, clientY: number): string | null => {
     if (!pickTargets.length) return null;
     const rect = renderer.domElement.getBoundingClientRect();
@@ -281,6 +290,7 @@ export function make3D({
     ray.setFromCamera(ptr, camera);
     const hits = ray.intersectObjects(pickTargets, true);
     for (const hit of hits) {
+      if (!isObjVisible(hit.object)) continue;
       if (viewport.clipActive) {
         const clipped = (hit.object as THREE.Mesh).material;
         const arr = Array.isArray(clipped) ? clipped : [clipped];

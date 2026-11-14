@@ -19,6 +19,7 @@ import {
 import { fmt } from '../engine/geometry2d';
 import type {
   ActionType,
+  AppMode,
   AssociationId,
   ComponentId,
   ComputedResult,
@@ -45,7 +46,17 @@ const DOSE_BTNS = [
   { v: 2, lbl: '×2' },
 ];
 
+const CORE_MED_IDS: TraitementId[] = [
+  'statine',
+  'iec',
+  'betabloquant',
+  'diuretique',
+  'anticoagulant',
+  'antiagregant',
+];
+
 interface ControlPanelProps {
+  appMode: AppMode;
   pane: 'ex' | 'ctl';
   onChangePane: (p: 'ex' | 'ctl') => void;
   tab: TabId;
@@ -73,6 +84,7 @@ interface ControlPanelProps {
 }
 
 export const ControlPanel: React.FC<ControlPanelProps> = ({
+  appMode,
   pane,
   onChangePane,
   tab,
@@ -101,6 +113,8 @@ export const ControlPanel: React.FC<ControlPanelProps> = ({
   const [openSec, setOpenSec] = useState<'cibles' | 'params' | 'meds' | null>('meds');
   const [showSoloMeds, setShowSoloMeds] = useState(true);
 
+  const visibleMeds = level === 1 ? CORE_MED_IDS : TRT_IDS;
+
   const examples = EX[tab];
   const { t: trActive, asso: activeAsso } = activeTrt(p);
   const trtActiveList = TRT_IDS.filter((k) => trActive[k]);
@@ -122,39 +136,52 @@ export const ControlPanel: React.FC<ControlPanelProps> = ({
   return (
     <aside className="flex flex-col rounded-xl border border-[var(--line)] bg-[var(--panel)] lg:max-h-[calc(100vh-118px)]">
       {/* Pane switch (desktop; mobile uses Scène / Exemples / Réglages bar above) */}
-      <div className="hidden lg:grid grid-cols-2 border-b border-[var(--line)] p-1.5 gap-1">
-        <button
-          type="button"
-          onClick={() => onChangePane('ex')}
-          className={`rounded-lg px-3 py-1.5 text-[12px] font-semibold transition ${
-            pane === 'ex'
-              ? 'bg-[var(--card2)] text-[var(--accent)] border border-sky-400/35'
-              : 'text-[var(--muted)] hover:text-[var(--txt)]'
-          }`}
-        >
-          Exemples
-        </button>
-        <button
-          type="button"
-          onClick={() => onChangePane('ctl')}
-          className={`rounded-lg px-3 py-1.5 text-[12px] font-semibold transition ${
-            pane === 'ctl'
-              ? 'bg-[var(--card2)] text-[var(--accent)] border border-sky-400/35'
-              : 'text-[var(--muted)] hover:text-[var(--txt)]'
-          }`}
-        >
-          Réglages
-          {(trtActiveList.length > 0 || activeMalCount > 0 || activeActCount > 0) && (
-            <span className="mono ml-1.5 rounded bg-sky-500/20 px-1.5 py-0.5 text-[10px] text-sky-200">
-              {trtActiveList.length + activeMalCount + activeActCount}
+      {appMode === 'libre' ? (
+        <div className="hidden lg:grid grid-cols-2 border-b border-[var(--line)] p-1.5 gap-1">
+          <button
+            type="button"
+            onClick={() => onChangePane('ex')}
+            className={`rounded-lg px-3 py-1.5 text-[12px] font-semibold transition ${
+              pane === 'ex'
+                ? 'bg-[var(--card2)] text-[var(--accent)] border border-sky-400/35'
+                : 'text-[var(--muted)] hover:text-[var(--txt)]'
+            }`}
+          >
+            Exemples
+          </button>
+          <button
+            type="button"
+            onClick={() => onChangePane('ctl')}
+            className={`rounded-lg px-3 py-1.5 text-[12px] font-semibold transition ${
+              pane === 'ctl'
+                ? 'bg-[var(--card2)] text-[var(--accent)] border border-sky-400/35'
+                : 'text-[var(--muted)] hover:text-[var(--txt)]'
+            }`}
+          >
+            Réglages
+            {(trtActiveList.length > 0 || activeMalCount > 0 || activeActCount > 0) && (
+              <span className="mono ml-1.5 rounded bg-sky-500/20 px-1.5 py-0.5 text-[10px] text-sky-200">
+                {trtActiveList.length + activeMalCount + activeActCount}
+              </span>
+            )}
+          </button>
+        </div>
+      ) : (
+        <div className="hidden lg:flex items-center justify-between border-b border-[var(--line)] px-3 py-2">
+          <span className="text-[12px] font-semibold text-[var(--accent)]">
+            Prescription & tolérance
+          </span>
+          {trtActiveList.length > 0 && (
+            <span className="mono rounded bg-emerald-500/20 px-1.5 py-0.5 text-[10px] font-semibold text-emerald-200">
+              {trtActiveList.length} actif{trtActiveList.length > 1 ? 's' : ''}
             </span>
           )}
-        </button>
-      </div>
+        </div>
+      )}
 
       {/* Scrollable body */}
       <div className="flex-1 overflow-y-auto p-2.5 thin-scroll space-y-2.5">
-        {pane === 'ex' ? (
+        {appMode === 'libre' && pane === 'ex' ? (
           <div className="space-y-1.5">
             {examples.map((ex) => {
               const active = activeExId === ex.id;
@@ -185,99 +212,102 @@ export const ControlPanel: React.FC<ControlPanelProps> = ({
           </div>
         ) : (
           <>
-            {/* SECTION 1: Quick Pathologies & Targets */}
-            <div className="rounded-lg border border-[var(--line)] bg-[var(--card)] overflow-hidden">
-              <button
-                type="button"
-                onClick={() => toggleSec('cibles')}
-                className="flex w-full items-center justify-between px-3 py-2 text-left"
-              >
-                <div className="flex items-center gap-2">
-                  <span className="text-[11px] font-bold uppercase tracking-wider text-[var(--txt)]">
-                    1 · Pathologies & cibles
-                  </span>
-                  {(activeMalCount > 0 || activeActCount > 0) && (
-                    <span className="mono rounded bg-red-500/20 px-1.5 py-0.5 text-[10px] font-semibold text-red-200">
-                      {activeMalCount + activeActCount}
+            {/* SECTION 1: Quick Pathologies & Targets (Exploration libre uniquement, pour éviter les doublons en mode Cas) */}
+            {appMode === 'libre' ? (
+              <div className="rounded-lg border border-[var(--line)] bg-[var(--card)] overflow-hidden">
+                <button
+                  type="button"
+                  onClick={() => toggleSec('cibles')}
+                  className="flex w-full items-center justify-between px-3 py-2 text-left"
+                >
+                  <div className="flex items-center gap-2">
+                    <span className="text-[11px] font-bold uppercase tracking-wider text-[var(--txt)]">
+                      1 · Pathologies & cibles
                     </span>
-                  )}
-                </div>
-                <ChevronDown
-                  className={`h-4 w-4 text-[var(--muted)] transition-transform ${
-                    openSec === 'cibles' ? 'rotate-180' : ''
-                  }`}
-                />
-              </button>
+                    {(activeMalCount > 0 || activeActCount > 0) && (
+                      <span className="mono rounded bg-red-500/20 px-1.5 py-0.5 text-[10px] font-semibold text-red-200">
+                        {activeMalCount + activeActCount}
+                      </span>
+                    )}
+                  </div>
+                  <ChevronDown
+                    className={`h-4 w-4 text-[var(--muted)] transition-transform ${
+                      openSec === 'cibles' ? 'rotate-180' : ''
+                    }`}
+                  />
+                </button>
 
-              {openSec === 'cibles' && (
-                <div className="border-t border-[var(--line)] p-2.5 space-y-3">
-                  {/* Direct 1-click valve & ventricle shortcuts */}
-                  <div>
-                    <div className="mb-1.5 text-[10px] font-bold uppercase tracking-wider text-[var(--dim)]">
-                      Tests rapides (valves & ventricules)
-                    </div>
-                    <div className="grid grid-cols-2 gap-1.5">
-                      {(
-                        [
-                          { id: 'aortique', act: 'stenose', lbl: 'V. aortique obstruée' },
-                          { id: 'mitrale', act: 'stenose', lbl: 'V. mitrale obstruée' },
-                          { id: 'vg', act: 'faible', lbl: 'VG affaibli' },
-                          { id: 'vd', act: 'faible', lbl: 'VD affaibli' },
-                        ] as { id: ComponentId; act: ActionType; lbl: string }[]
-                      ).map((q) => {
-                        const isOn = actOf(q.id, p) === q.act;
-                        return (
+                {openSec === 'cibles' && (
+                  <div className="border-t border-[var(--line)] p-2.5 space-y-3">
+                    {/* Direct 1-click valve & ventricle shortcuts */}
+                    <div>
+                      <div className="mb-1.5 text-[10px] font-bold uppercase tracking-wider text-[var(--dim)]">
+                        Valves & ventricules
+                      </div>
+                      <div className="grid grid-cols-2 gap-1.5">
+                        {(
+                          [
+                            { id: 'aortique', act: 'stenose', lbl: 'V. aortique obstruée' },
+                            { id: 'mitrale', act: 'stenose', lbl: 'V. mitrale obstruée' },
+                            { id: 'vg', act: 'faible', lbl: 'VG affaibli' },
+                            { id: 'vd', act: 'faible', lbl: 'VD affaibli' },
+                          ] as { id: ComponentId; act: ActionType; lbl: string }[]
+                        ).map((q) => {
+                          const isOn = actOf(q.id, p) === q.act;
+                          return (
+                            <button
+                              key={`${q.id}-${q.act}`}
+                              type="button"
+                              onClick={() => onQuickAction(q.id, isOn ? null : q.act)}
+                              className={`rounded-md border px-2 py-1.5 text-[11px] font-semibold text-left transition ${
+                                isOn
+                                  ? 'border-amber-400/70 bg-amber-500/20 text-amber-100'
+                                  : 'border-[var(--line)] bg-[var(--panel)] text-[var(--txt)] hover:border-sky-400/60'
+                              }`}
+                            >
+                              {q.lbl}
+                            </button>
+                          );
+                        })}
+                      </div>
+                      {level === 3 && (
+                        <div className="mt-1.5 grid grid-cols-3 gap-1">
                           <button
-                            key={`${q.id}-${q.act}`}
                             type="button"
-                            onClick={() => onQuickAction(q.id, isOn ? null : q.act)}
-                            className={`rounded-md border px-2 py-1.5 text-[11px] font-semibold text-left transition ${
-                              isOn
+                            onClick={() => onToggleExtraRythme('esv')}
+                            className={`rounded-md border px-1.5 py-1 text-[10.5px] font-semibold transition ${
+                              p.extraRythme === 'esv'
                                 ? 'border-amber-400/70 bg-amber-500/20 text-amber-100'
-                                : 'border-[var(--line)] bg-[var(--panel)] text-[var(--txt)] hover:border-sky-400/60'
+                                : 'border-[var(--line)] bg-[var(--panel)] text-[var(--muted)] hover:text-[var(--txt)]'
                             }`}
                           >
-                            {q.lbl}
+                            ESV
                           </button>
-                        );
-                      })}
+                          <button
+                            type="button"
+                            onClick={() => onToggleExtraRythme('flutter')}
+                            className={`rounded-md border px-1.5 py-1 text-[10.5px] font-semibold transition ${
+                              p.extraRythme === 'flutter'
+                                ? 'border-amber-400/70 bg-amber-500/20 text-amber-100'
+                                : 'border-[var(--line)] bg-[var(--panel)] text-[var(--muted)] hover:text-[var(--txt)]'
+                            }`}
+                          >
+                            Flutter
+                          </button>
+                          <button
+                            type="button"
+                            onClick={onToggleEffort}
+                            className={`rounded-md border px-1.5 py-1 text-[10.5px] font-semibold transition ${
+                              p.effort
+                                ? 'border-sky-400/70 bg-sky-500/20 text-sky-100'
+                                : 'border-[var(--line)] bg-[var(--panel)] text-[var(--muted)] hover:text-[var(--txt)]'
+                            }`}
+                          >
+                            {p.effort ? 'Effort ON' : 'Repos'}
+                          </button>
+                        </div>
+                      )}
                     </div>
-                    <div className="mt-1.5 grid grid-cols-3 gap-1">
-                      <button
-                        type="button"
-                        onClick={() => onToggleExtraRythme('esv')}
-                        className={`rounded-md border px-1.5 py-1 text-[10.5px] font-semibold transition ${
-                          p.extraRythme === 'esv'
-                            ? 'border-amber-400/70 bg-amber-500/20 text-amber-100'
-                            : 'border-[var(--line)] bg-[var(--panel)] text-[var(--muted)] hover:text-[var(--txt)]'
-                        }`}
-                      >
-                        ESV
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => onToggleExtraRythme('flutter')}
-                        className={`rounded-md border px-1.5 py-1 text-[10.5px] font-semibold transition ${
-                          p.extraRythme === 'flutter'
-                            ? 'border-amber-400/70 bg-amber-500/20 text-amber-100'
-                            : 'border-[var(--line)] bg-[var(--panel)] text-[var(--muted)] hover:text-[var(--txt)]'
-                        }`}
-                      >
-                        Flutter
-                      </button>
-                      <button
-                        type="button"
-                        onClick={onToggleEffort}
-                        className={`rounded-md border px-1.5 py-1 text-[10.5px] font-semibold transition ${
-                          p.effort
-                            ? 'border-sky-400/70 bg-sky-500/20 text-sky-100'
-                            : 'border-[var(--line)] bg-[var(--panel)] text-[var(--muted)] hover:text-[var(--txt)]'
-                        }`}
-                      >
-                        {p.effort ? 'Effort ON' : 'Repos'}
-                      </button>
-                    </div>
-                  </div>
 
                   {/* Tab-specific */}
                   {tab === 'vaisseau' && (
@@ -341,7 +371,7 @@ export const ControlPanel: React.FC<ControlPanelProps> = ({
                     </div>
                   )}
 
-                  {tab === 'coeur' && (
+                  {tab === 'coeur' && level === 3 && (
                     <div className="space-y-1.5 pt-1 border-t border-[var(--line)]">
                       <div className="flex items-center justify-between text-[10px] font-bold uppercase tracking-wider text-[var(--dim)]">
                         <span>Composants du cœur</span>
@@ -397,7 +427,9 @@ export const ControlPanel: React.FC<ControlPanelProps> = ({
                         >
                           <div className="min-w-0">
                             <div className="text-[11.5px] font-semibold truncate">{C.maladies[mid].nom}</div>
-                            <div className="text-[10.5px] text-[var(--muted)] truncate">{MAL_TXT[mid]}</div>
+                            {level >= 2 && (
+                              <div className="text-[10.5px] text-[var(--muted)] truncate">{MAL_TXT[mid]}</div>
+                            )}
                           </div>
                           <span
                             className={`mono shrink-0 text-[10px] font-bold ${
@@ -422,82 +454,89 @@ export const ControlPanel: React.FC<ControlPanelProps> = ({
                   )}
                 </div>
               )}
-            </div>
+              </div>
+            ) : (
+              <div className="rounded-lg border border-[var(--line)] bg-[var(--card)] px-3 py-2 text-[11.5px] text-[var(--muted)]">
+                Pathologie du patient verrouillée sur le cas sélectionné · Ajustez votre prescription ci-dessous.
+              </div>
+            )}
 
-            {/* SECTION 2: 5 Physiology Sliders */}
-            <div className="rounded-lg border border-[var(--line)] bg-[var(--card)] overflow-hidden">
-              <button
-                type="button"
-                onClick={() => toggleSec('params')}
-                className="flex w-full items-center justify-between px-3 py-2 text-left"
-              >
-                <span className="text-[11px] font-bold uppercase tracking-wider text-[var(--txt)]">
-                  2 · Paramètres physiologiques
-                </span>
-                <ChevronDown
-                  className={`h-4 w-4 text-[var(--muted)] transition-transform ${
-                    openSec === 'params' ? 'rotate-180' : ''
-                  }`}
-                />
-              </button>
+            {/* SECTION 2: 5 Physiology Sliders (Niveau 2 Comprendre & 3 Expert) */}
+            {appMode === 'libre' && level >= 2 && (
+              <div className="rounded-lg border border-[var(--line)] bg-[var(--card)] overflow-hidden">
+                <button
+                  type="button"
+                  onClick={() => toggleSec('params')}
+                  className="flex w-full items-center justify-between px-3 py-2 text-left"
+                >
+                  <span className="text-[11px] font-bold uppercase tracking-wider text-[var(--txt)]">
+                    2 · Paramètres physiologiques
+                  </span>
+                  <ChevronDown
+                    className={`h-4 w-4 text-[var(--muted)] transition-transform ${
+                      openSec === 'params' ? 'rotate-180' : ''
+                    }`}
+                  />
+                </button>
 
-              {openSec === 'params' && (
-                <div className="border-t border-[var(--line)] p-2.5 space-y-2">
-                  {SLIDERS.map((s) => {
-                    const cfg = C.curseurs[s.cfg];
-                    const val = p[s.k];
-                    return (
-                      <div
-                        key={s.k}
-                        className="rounded-md border border-[var(--line)] bg-[var(--panel)] p-2"
-                      >
-                        <div className="mb-1 flex items-center justify-between gap-2">
-                          <span className="text-[11.5px] font-semibold text-[var(--txt)]">{s.nom}</span>
-                          <span className="mono shrink-0 whitespace-nowrap text-[11.5px] font-semibold text-[var(--accent)]">
-                            {fmt(val, s.d)} {s.u}
-                          </span>
+                {openSec === 'params' && (
+                  <div className="border-t border-[var(--line)] p-2.5 space-y-2">
+                    {SLIDERS.map((s) => {
+                      const cfg = C.curseurs[s.cfg];
+                      const val = p[s.k];
+                      return (
+                        <div
+                          key={s.k}
+                          className="rounded-md border border-[var(--line)] bg-[var(--panel)] p-2"
+                        >
+                          <div className="mb-1 flex items-center justify-between gap-2">
+                            <span className="text-[11.5px] font-semibold text-[var(--txt)]">{s.nom}</span>
+                            <span className="mono shrink-0 whitespace-nowrap text-[11.5px] font-semibold text-[var(--accent)]">
+                              {fmt(val, s.d)} {s.u}
+                            </span>
+                          </div>
+                          <div className="flex items-center gap-1.5">
+                            <button
+                              type="button"
+                              aria-label={`Diminuer ${s.nom}`}
+                              onClick={() =>
+                                onUpdateSlider(s.k, Math.max(cfg.min, +(val - cfg.pas).toFixed(3)))
+                              }
+                              className="flex h-6 w-6 shrink-0 items-center justify-center rounded border border-[var(--line2)] bg-[var(--card)] text-xs font-bold text-[var(--muted)] hover:text-[var(--txt)]"
+                            >
+                              −
+                            </button>
+                            <input
+                              type="range"
+                              className="atelier-range"
+                              aria-label={s.nom}
+                              min={cfg.min}
+                              max={cfg.max}
+                              step={cfg.pas}
+                              value={val}
+                              onChange={(e) => onUpdateSlider(s.k, parseFloat(e.target.value))}
+                            />
+                            <button
+                              type="button"
+                              aria-label={`Augmenter ${s.nom}`}
+                              onClick={() =>
+                                onUpdateSlider(s.k, Math.min(cfg.max, +(val + cfg.pas).toFixed(3)))
+                              }
+                              className="flex h-6 w-6 shrink-0 items-center justify-center rounded border border-[var(--line2)] bg-[var(--card)] text-xs font-bold text-[var(--muted)] hover:text-[var(--txt)]"
+                            >
+                              +
+                            </button>
+                          </div>
+                          {level >= 2 && (
+                            <p className="mt-1 text-[10.5px] leading-snug text-[var(--dim)]">{s.help}</p>
+                          )}
                         </div>
-                        <div className="flex items-center gap-1.5">
-                          <button
-                            type="button"
-                            aria-label={`Diminuer ${s.nom}`}
-                            onClick={() =>
-                              onUpdateSlider(s.k, Math.max(cfg.min, +(val - cfg.pas).toFixed(3)))
-                            }
-                            className="flex h-6 w-6 shrink-0 items-center justify-center rounded border border-[var(--line2)] bg-[var(--card)] text-xs font-bold text-[var(--muted)] hover:text-[var(--txt)]"
-                          >
-                            −
-                          </button>
-                          <input
-                            type="range"
-                            className="atelier-range"
-                            aria-label={s.nom}
-                            min={cfg.min}
-                            max={cfg.max}
-                            step={cfg.pas}
-                            value={val}
-                            onChange={(e) => onUpdateSlider(s.k, parseFloat(e.target.value))}
-                          />
-                          <button
-                            type="button"
-                            aria-label={`Augmenter ${s.nom}`}
-                            onClick={() =>
-                              onUpdateSlider(s.k, Math.min(cfg.max, +(val + cfg.pas).toFixed(3)))
-                            }
-                            className="flex h-6 w-6 shrink-0 items-center justify-center rounded border border-[var(--line2)] bg-[var(--card)] text-xs font-bold text-[var(--muted)] hover:text-[var(--txt)]"
-                          >
-                            +
-                          </button>
-                        </div>
-                        {level >= 2 && (
-                          <p className="mt-1 text-[10.5px] leading-snug text-[var(--dim)]">{s.help}</p>
-                        )}
-                      </div>
-                    );
-                  })}
-                </div>
-              )}
-            </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+            )}
 
             {/* SECTION 3: Medications — Amloperin®, Tensoplus® & Impact */}
             <div className="rounded-lg border border-[var(--line)] bg-[var(--card)] overflow-hidden">
@@ -598,7 +637,7 @@ export const ControlPanel: React.FC<ControlPanelProps> = ({
                   </div>
 
                   {/* Impact summary card whenever any treatment is active */}
-                  {fxComp && (
+                  {fxComp && level >= 2 && (
                     <div className="space-y-1.5 rounded-lg border border-emerald-400/35 bg-emerald-950/20 p-2.5">
                       <div className="flex items-center justify-between text-[11px]">
                         <span className="font-semibold text-emerald-200">Impact mesuré</span>
@@ -644,36 +683,38 @@ export const ControlPanel: React.FC<ControlPanelProps> = ({
                     </div>
                   )}
 
-                  {/* Biologie & Tolérance live readout */}
-                  <div className="rounded-lg border border-[var(--line)] bg-[var(--panel)] p-2 space-y-1">
-                    <div className="text-[10px] font-bold uppercase tracking-wider text-[var(--dim)]">
-                      Biologie & tolérance
+                  {/* Biologie & Tolérance live readout (Niveau 2+) */}
+                  {level >= 2 && (
+                    <div className="rounded-lg border border-[var(--line)] bg-[var(--panel)] p-2 space-y-1">
+                      <div className="text-[10px] font-bold uppercase tracking-wider text-[var(--dim)]">
+                        Biologie & tolérance
+                      </div>
+                      <div className="mono flex items-center justify-between text-[11px]">
+                        <span className="text-[var(--muted)]">Kaliémie (K⁺)</span>
+                        <span
+                          className={
+                            r.bio.potassium > 5.2 || r.bio.potassium < 3.5
+                              ? 'font-bold text-amber-300'
+                              : 'text-[var(--txt)]'
+                          }
+                        >
+                          {r.bio.potassium.toFixed(1)} mmol/L
+                        </span>
+                      </div>
+                      <div className="mono flex items-center justify-between text-[11px]">
+                        <span className="text-[var(--muted)]">Rein (DFG · Créat)</span>
+                        <span className={r.bio.dfg < 55 ? 'font-bold text-amber-300' : 'text-[var(--txt)]'}>
+                          {r.bio.dfg} mL/min · {r.bio.creatinine} µmol/L
+                        </span>
+                      </div>
+                      <div className="flex items-center justify-between text-[11px]">
+                        <span className="text-[var(--muted)]">Toux sèche (IEC)</span>
+                        <span className={r.bio.risqueToux ? 'text-amber-300' : 'text-emerald-300'}>
+                          {r.bio.risqueToux ? 'Possible' : 'Non'}
+                        </span>
+                      </div>
                     </div>
-                    <div className="mono flex items-center justify-between text-[11px]">
-                      <span className="text-[var(--muted)]">Kaliémie (K⁺)</span>
-                      <span
-                        className={
-                          r.bio.potassium > 5.2 || r.bio.potassium < 3.5
-                            ? 'font-bold text-amber-300'
-                            : 'text-[var(--txt)]'
-                        }
-                      >
-                        {r.bio.potassium.toFixed(1)} mmol/L
-                      </span>
-                    </div>
-                    <div className="mono flex items-center justify-between text-[11px]">
-                      <span className="text-[var(--muted)]">Rein (DFG · Créat)</span>
-                      <span className={r.bio.dfg < 55 ? 'font-bold text-amber-300' : 'text-[var(--txt)]'}>
-                        {r.bio.dfg} mL/min · {r.bio.creatinine} µmol/L
-                      </span>
-                    </div>
-                    <div className="flex items-center justify-between text-[11px]">
-                      <span className="text-[var(--muted)]">Toux sèche (IEC)</span>
-                      <span className={r.bio.risqueToux ? 'text-amber-300' : 'text-emerald-300'}>
-                        {r.bio.risqueToux ? 'Possible' : 'Non'}
-                      </span>
-                    </div>
-                  </div>
+                  )}
 
                   {/* Collapsible solo classes so the panel stays uncluttered */}
                   <div className="pt-0.5">
@@ -682,7 +723,11 @@ export const ControlPanel: React.FC<ControlPanelProps> = ({
                       onClick={() => setShowSoloMeds((v) => !v)}
                       className="flex w-full items-center justify-between rounded-md border border-[var(--line)] bg-[var(--panel)] px-2.5 py-1.5 text-[11px] font-semibold text-[var(--muted)] hover:text-[var(--txt)]"
                     >
-                      <span>Molécules individuelles ({TRT_IDS.length})</span>
+                      <span>
+                        {level === 1
+                          ? `Traitements essentiels (${visibleMeds.length})`
+                          : `Molécules individuelles (${visibleMeds.length})`}
+                      </span>
                       <ChevronDown
                         className={`h-3.5 w-3.5 transition-transform ${
                           showSoloMeds ? 'rotate-180' : ''
@@ -692,7 +737,7 @@ export const ControlPanel: React.FC<ControlPanelProps> = ({
 
                     {(showSoloMeds || (!activeAsso && trtActiveList.length > 0)) && (
                       <div className="mt-1.5 space-y-1">
-                        {TRT_IDS.map((tid) => {
+                        {visibleMeds.map((tid) => {
                           const active = trActive[tid];
                           const tMeta = C.traitements[tid];
                           const fromAsso =
@@ -710,9 +755,11 @@ export const ControlPanel: React.FC<ControlPanelProps> = ({
                             >
                               <div className="min-w-0">
                                 <div className="text-[11.5px] font-semibold truncate">{tMeta.nom}</div>
-                                <div className="text-[10px] text-[var(--muted)] truncate">
-                                  {tMeta.classe}
-                                </div>
+                                {level >= 2 && (
+                                  <div className="text-[10px] text-[var(--muted)] truncate">
+                                    {tMeta.classe}
+                                  </div>
+                                )}
                               </div>
                               <span
                                 className={`mono shrink-0 text-[10px] font-bold ${
@@ -728,8 +775,8 @@ export const ControlPanel: React.FC<ControlPanelProps> = ({
                     )}
                   </div>
 
-                  {/* Individual Doses when applicable */}
-                  {doseTrtIds.length > 0 && (
+                  {/* Individual Doses when applicable (Niveau 3 Expert) */}
+                  {level === 3 && doseTrtIds.length > 0 && (
                     <div className="space-y-1.5 rounded-md border border-[var(--line)] bg-[var(--panel)] p-2">
                       <div className="text-[10px] font-bold uppercase tracking-wider text-[var(--dim)]">
                         Doses individuelles
