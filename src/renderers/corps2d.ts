@@ -339,7 +339,7 @@ export function drawCorps({
   if (p.ischJambe) drawClotMarker(416, 415, 6);
   if (r.zoneIDM) drawClotMarker(386, 212, 5.5);
 
-  // Ankle edema (clearly proportional so Amloperin/Tensoplus −55 % reduction is visible!)
+  // Ankle edema (clearly proportional so Amloperin/Tensoplus −38 % reduction is visible!)
   if (r.oedeme > 0.08) {
     const oed = clamp(r.oedeme, 0, 1);
     c.fillStyle = `rgba(125,211,252,${0.18 + 0.48 * oed})`;

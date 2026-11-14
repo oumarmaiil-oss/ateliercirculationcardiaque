@@ -6,8 +6,8 @@ Simulateur pédagogique et interactif de physiologie, physiopathologie et pharma
 
 ## Liens d’accès direct
 
-- **Ouvrir l’application en ligne (Aperçu partagé)** : https://ais-pre-tqen3aesbw6bzfv4zrmynf-817968806978.europe-west2.run.app
-- **Mode Cas cliniques (« Pathologies à soigner »)** : https://ais-pre-tqen3aesbw6bzfv4zrmynf-817968806978.europe-west2.run.app/?mode=cas
+- **Ouvrir l’application en ligne** : https://oumarmaiil-oss.github.io/ateliercirculationcardiaque/
+- **Mode Cas cliniques (« Pathologies à soigner »)** : https://oumarmaiil-oss.github.io/ateliercirculationcardiaque/?mode=cas
 - **Environnement de développement local** : `http://localhost:3000`
 - **Signaler une erreur ou suggérer une amélioration** : [Contacter Dr Oumar Sow](https://wa.me/221772030979)
 
@@ -31,6 +31,7 @@ Simulateur pédagogique et interactif de physiologie, physiopathologie et pharma
 
 ### 4. Lésions cliquables directement sur la scène & captures exportables
 - **Lésions interactives** (2D et 3D) : cliquer sur un caillot (FA, coronaire, pulmonaire, veine cave, cérébral, fémoral), une plaque d’athérome ou une calcification valvulaire ouvre un menu d’actions directes (anticoagulation, désobstruction, protocole, coupe artérielle, remplacement valvulaire).
+- **Auscultation** : B1, B2 (A2 + P2 avec dédoublement physiologique variant avec la respiration), B3 (insuffisance cardiaque, IM importante), B4 (HVG, RA, ischémie ; absent en FA), souffles dont l’intensité suit la sévérité. Un sélecteur de **foyer d’auscultation** (aortique, pulmonaire, Erb, tricuspide, mitral) module chaque bruit. Le ralenti (×0,5, ×0,25) rend le dédoublement de B2 audible.
 - **Audio Web Audio & export** : synthèse temps réel des bruits cardiaques (`B1`, `B2`, souffles systoliques et diastoliques) intégrée à la capture vidéo **WebM (vp9/vp8 + opus)** et export **PNG annoté** incluant les constantes hémodynamiques.
 
 ---
@@ -49,8 +50,8 @@ npm run dev
 # 3. Vérifier le typage TypeScript
 npm run lint
 
-# 4. Exécuter les tests unitaires du moteur physiologique et des scénarios
-npx tsx --test src/engine/physiology.test.ts src/engine/clinicalCases.test.ts src/engine/storyboard.test.ts
+# 4. Exécuter les tests unitaires (moteur, scénarios, sémiologie auscultatoire)
+npm test
 
 # 5. Générer le build de production
 npm run build
@@ -58,18 +59,9 @@ npm run build
 
 ---
 
-## Publier sur GitHub
+## Publication
 
-Si vous déployez ce dépôt vers votre compte GitHub :
-
-```bash
-git init
-git add .
-git commit -m "feat: Atelier du Coeur - simulation cardiovasculaire 2D/3D"
-git branch -M main
-git remote add origin https://github.com/<votre-utilisateur>/atelier-du-coeur.git
-git push -u origin main
-```
+Chaque modification poussée sur la branche `main` est automatiquement vérifiée (typage, tests), compilée puis publiée sur GitHub Pages par le workflow `.github/workflows/deploy.yml`. Les vues 3D (three.js) sont chargées à la demande pour accélérer l’ouverture sur mobile.
 
 ---
 
@@ -80,7 +72,7 @@ git push -u origin main
 - `src/engine/storyboard.ts` — Séquences visuelles en 5 moments clés pour chaque pathologie (avec et sans traitement).
 - `src/engine/protocols.ts` — Protocoles thérapeutiques ciblés et fiches d’action sur lésions cliquables.
 - `src/renderers/` — Rendus Canvas 2D haute densité (`corps2d.ts`, `coeur2d.ts`, `vaisseau2d.ts`, `charts.ts`) et scènes Three.js (`heart3d.ts`, `vessel3d.ts`).
-- `src/audio/heartSounds.ts` — Synthèse Web Audio (`B1`, `B2`, souffles) et flux `MediaStreamAudioDestinationNode` pour l’enregistrement vidéo.
+- `src/audio/heartSounds.ts` — Synthèse Web Audio (`B1`, `B2`, `B3`, `B4`, souffles, foyers d’auscultation) et flux `MediaStreamAudioDestinationNode` pour l’enregistrement vidéo.
 
 ---
 

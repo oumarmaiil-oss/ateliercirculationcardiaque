@@ -1131,7 +1131,7 @@ export function getStoryboardMoment(
     {
       step: 2,
       label: '2 · Reins & chevilles protégés',
-      title: 'Œdèmes résorbés (−55 %) & filtration rénale préservée',
+      title: 'Œdèmes résorbés (−38 %) & filtration rénale préservée',
       whatHappens: 'La pression dans les glomérules du rein se normalise : le DFG reste stable et les chevilles dégonflent.',
       focusTab: 'corps',
       focusZone: 'rein',

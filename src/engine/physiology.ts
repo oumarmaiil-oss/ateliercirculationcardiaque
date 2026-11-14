@@ -511,7 +511,7 @@ export function compute(
     1.5
   );
   const oedemeVeineux = clamp((pvc - MO.seuilOedemeJambes) / 6, 0, 1);
-  const redOedeme = C.associations['amlo-peri']?.reductionOedeme ?? 0.55;
+  const redOedeme = C.associations['amlo-peri']?.reductionOedeme ?? 0.38;
   const oedemeICa = tr.ica
     ? clamp(
         0.45 *

@@ -82,7 +82,7 @@ export const CLINICAL_CASES: ClinicalCaseDef[] = [
     objectif: 'Normaliser la PA (< 138/86 mmHg) tout en faisant régresser l’œdème des chevilles et en préservant le rein.',
     indices: [
       'L’amlodipine seule dilate surtout l’artériole en amont : le sang pousse dans les capillaires de la cheville.',
-      'Associer un IEC (Amloperin®) dilate aussi la veinule de sortie et réduit l’œdème d’environ 55 %.',
+      'Associer un IEC (Amloperin®) dilate aussi la veinule de sortie et réduit l’œdème d’environ 38 %.',
     ],
     preset: {
       mal: ['hta'],
@@ -103,7 +103,7 @@ export const CLINICAL_CASES: ClinicalCaseDef[] = [
         horizon: '2 sem.',
         untreatedTitle: 'Œdèmes persistants & mauvaise observance',
         untreatedText: 'Le patient risque d’arrêter son traitement à cause du gonflement des chevilles.',
-        treatedTitle: 'Chevilles dégonflées (−55 %) & PA maîtrisée',
+        treatedTitle: 'Chevilles dégonflées (−38 %) & PA maîtrisée',
         treatedText: 'L’œdème recule nettement, la tolérance est bonne et la kaliémie reste stable.',
       },
       {
@@ -279,7 +279,7 @@ export const CLINICAL_CASES: ClinicalCaseDef[] = [
     tabDefaut: 'corps',
     patient: 'M. Koné, 71 ans · Pouls irrégulier à 115/min, stase auriculaire',
     motif: 'Oreillettes désynchronisées : le sang tourbillonne dans l’oreillette gauche et menace le cerveau.',
-    objectif: 'Ralentir les ventricules (< 92/min) et protéger le cerveau avec un anticoagulant oral (pas seulement aspirine).',
+    objectif: 'Ralentir les ventricules (FC de repos ≤ 94/min dans ce cas ; l’ESC 2024 vise d’abord < 110/min) et protéger le cerveau avec un anticoagulant oral (pas seulement aspirine).',
     indices: [
       'Un bêtabloquant freine la conduction dans le nœud AV et calme le rythme ventriculaire.',
       'Seul un anticoagulant oral (AOD/AVK) réduit le risque d’AVC embolique d’environ 64 % en FA.',
@@ -464,7 +464,7 @@ export function evaluateCaseTreatment(
         detail: `${fmt(r.pas)}/${fmt(r.pad)} mmHg`,
       });
       criteres.push({
-        label: 'Œdème des chevilles résolu (−55 %)',
+        label: 'Œdème des chevilles résolu (−38 %)',
         ok: oedOk,
         detail: oedOk ? 'Œdème réduit' : 'Œdème encore marqué (amlodipine sans IEC/ARA II)',
       });
@@ -826,7 +826,7 @@ export function projectTimelineState(
   const consequences: string[] = [];
   if (rProj.pog >= 22) consequences.push('Œdème aigu du poumon (POG ≥ 22 mmHg)');
   else if (rProj.congestion > 0.25) consequences.push(`Congestion pulmonaire (POG ${fmt(rProj.pog)} mmHg)`);
-  if (rProj.oedeme > 0.45) consequences.push('Œdèmes des membres inférieurs marqués');
+  if (rProj.oedeme > 0.55) consequences.push('Œdèmes des membres inférieurs marqués');
   if (p.mal.avc) consequences.push('Atteinte cérébrale · AVC ischémique');
   if (p.mal.idm) consequences.push('Nécrose myocardique (IDM)');
   if (hvg >= 0.55) consequences.push('Cœur · Hypertrophie du VG (HVG)');
@@ -871,7 +871,7 @@ export function projectTimelineState(
     rProj.bio.potassium > 5.4;
   const hasWarn =
     rProj.congestion > 0.25 ||
-    rProj.oedeme > 0.45 ||
+    rProj.oedeme > 0.55 ||
     rProj.pas > 138 ||
     hvg >= 0.45 ||
     rProj.rein > 0.22 ||
