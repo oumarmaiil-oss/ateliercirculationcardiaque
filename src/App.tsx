@@ -100,6 +100,7 @@ import { corpsHit, corpsLesionHit, createCorpsState, drawCorps } from './rendere
 import type { Heart3DInstance } from './renderers/heart3d';
 import { createVaisseauState, drawVaisseau, vaisseauLesionHit } from './renderers/vaisseau2d';
 import type { Vessel3DInstance } from './renderers/vessel3d';
+import { createGovernor, detectInitialProfile, perf, setPerfProfile } from './engine/perf';
 
 const SPEEDS = [0.25, 0.5, 1, 1.5];
 
@@ -251,7 +252,17 @@ export default function App() {
     initial.mode === 'cas' ? initialCase.tabDefaut : initial.tab
   );
   const [level, setLevel] = useState<ViewLevel>(initial.level);
-  const [profile, setProfile] = useState<DisplayProfile>('complet');
+  const [profile, setProfileState] = useState<DisplayProfile>(() => {
+    const p0 = detectInitialProfile();
+    setPerfProfile(p0);
+    return p0;
+  });
+  // Choix manuel de l'utilisateur : le gouverneur automatique ne le contredit plus.
+  const profileManualRef = useRef(false);
+  const setProfile = useCallback((pr: DisplayProfile) => {
+    profileManualRef.current = true;
+    setProfileState(pr);
+  }, []);
   const [pane, setPane] = useState<'ex' | 'ctl'>(initial.mode === 'cas' ? 'ctl' : 'ex');
   const [mobileSheet, setMobileSheet] = useState<'scene' | 'ex' | 'ctl'>('scene');
   const [activeExId, setActiveExId] = useState<string>(initial.exId);
@@ -458,6 +469,7 @@ export default function App() {
   heartChartModeRef.current = heartChartMode;
   const profileRef = useRef(profile);
   profileRef.current = profile;
+  setPerfProfile(profile);
   const soundRef = useRef(soundEnabled);
   soundRef.current = soundEnabled;
   const hoverIdRef = useRef(hoverCompId);
@@ -547,6 +559,8 @@ export default function App() {
       setToastMsg((cur) => (cur === msg ? null : cur));
     }, 2400);
   }, []);
+  const showToastRef = useRef(showToast);
+  showToastRef.current = showToast;
 
   // Initialize / dispose Three.js scenes when tab or viewMode switches
   useEffect(() => {
@@ -596,6 +610,7 @@ export default function App() {
           }
         );
         inst.setMode(heart3dModeRef.current);
+        if (perf().lightParticles) inst.viewport.lighten();
         heart3dInstRef.current = inst;
         disposeInst = () => {
           inst.dispose();
@@ -617,6 +632,7 @@ export default function App() {
             showToast(`Couche sélectionnée : ${layer}`);
           }
         });
+        if (perf().lightParticles) inst.viewport.lighten();
         vessel3dInstRef.current = inst;
         disposeInst = () => {
           inst.dispose();
@@ -632,6 +648,17 @@ export default function App() {
 
   const heart3dModeRef = useRef(heart3dMode);
   heart3dModeRef.current = heart3dMode;
+
+  // Profil de qualité modifié : réappliquer la densité de pixels 3D et redessiner.
+  useEffect(() => {
+    heart3dInstRef.current?.viewport.applyQuality();
+    vessel3dInstRef.current?.viewport.applyQuality();
+    if (perf().lightParticles) {
+      heart3dInstRef.current?.viewport.lighten();
+      vessel3dInstRef.current?.viewport.lighten();
+    }
+    need2DRenderRef.current = true;
+  }, [profile]);
 
   // Update 3D heart mode
   useEffect(() => {
@@ -652,10 +679,52 @@ export default function App() {
     let prevTs = performance.now();
     let uiSyncAccum = 0;
     let sw3dAccum = 0;
+    let lastDrawTs = 0;
+    let visCheckTs = -1000;
+    let stageVisible = true;
+    let chartVisible = true;
+    let pvVisible = true;
+    const governor = createGovernor();
 
     const frame = (ts: number) => {
-      const realDt = clamp((ts - prevTs) / 1000, 0, 0.08);
+      const rawDtMs = ts - prevTs;
+      const realDt = clamp(rawDtMs / 1000, 0, 0.08);
       prevTs = ts;
+
+      // Gouverneur de qualité : descend d'un profil si l'affichage saccade.
+      if (!profileManualRef.current) {
+        const lower = governor.sample(rawDtMs, ts, profileRef.current);
+        if (lower) {
+          profileRef.current = lower;
+          setPerfProfile(lower);
+          setProfileState(lower);
+          showToastRef.current(
+            lower === 'leger'
+              ? 'Affichage allégé pour rester fluide sur cet appareil (réglable : Complet / Équilibré / Léger).'
+              : 'Qualité d’affichage ajustée pour plus de fluidité.'
+          );
+        }
+      }
+
+      // Visibilité des zones dessinées (vérifiée ~3 fois/s) : on ne redessine pas
+      // ce qui est hors de l'écran.
+      if (ts - visCheckTs > 330) {
+        visCheckTs = ts;
+        const onScreen = (el: Element | null) => {
+          if (!el) return false;
+          const rc = el.getBoundingClientRect();
+          return rc.bottom > 0 && rc.top < window.innerHeight && rc.width > 0;
+        };
+        stageVisible = onScreen(canvas2dRef.current) || onScreen(stage3dRef.current);
+        chartVisible = onScreen(chartCanvasRef.current);
+        pvVisible = onScreen(pvCanvasRef.current);
+      }
+
+      // Cadence de dessin plafonnée (profil Léger : 30 i/s). L'horloge et le son
+      // continuent d'avancer à chaque image, seuls les dessins sont espacés.
+      const minGap = 1000 / perf().fps - 3;
+      const drawSlot = ts - lastDrawTs >= minGap;
+      if (drawSlot) lastDrawTs = ts;
 
       const clk = clkRef.current;
       let p = paramsRef.current;
@@ -697,7 +766,7 @@ export default function App() {
 
       const curTab = tabRef.current;
       const mode = viewModeRef.current;
-      const isLight = profileRef.current === 'leger';
+      const isLight = perf().lightParticles;
 
       if (clk.playing) {
         clk.t += realDt * clk.speed;
@@ -717,10 +786,11 @@ export default function App() {
       sndTick(audioRef.current, clk, p, targetR, soundRef.current);
 
       const shouldDraw2D =
-        clk.playing || need2DRenderRef.current || isLerping || stepAnimating || ovMoving;
+        drawSlot &&
+        (clk.playing || need2DRenderRef.current || isLerping || stepAnimating || ovMoving);
       if (shouldDraw2D) {
         const cv = canvas2dRef.current;
-        if (cv && (curTab === 'corps' || mode === '2d')) {
+        if (cv && stageVisible && (curTab === 'corps' || mode === '2d')) {
           if (curTab === 'corps') {
             drawCorps({
               cv,
@@ -773,19 +843,19 @@ export default function App() {
         const chartCv = chartCanvasRef.current;
         const pvCv = pvCanvasRef.current;
         if (curTab === 'coeur') {
-          if (chartCv && (heartChartModeRef.current === 'wiggers' || heartChartModeRef.current === 'both')) {
+          if (chartCv && chartVisible && (heartChartModeRef.current === 'wiggers' || heartChartModeRef.current === 'both')) {
             drawWiggers(chartCv, clk, r, d);
           }
-          if (pvCv && (heartChartModeRef.current === 'pv' || heartChartModeRef.current === 'both')) {
+          if (pvCv && pvVisible && (heartChartModeRef.current === 'pv' || heartChartModeRef.current === 'both')) {
             drawPVLoop(pvCv, clk, r);
           }
-        } else if (curTab === 'vaisseau' && chartCv) {
+        } else if (curTab === 'vaisseau' && chartCv && chartVisible) {
           drawOnde(chartCv, clk, p, r);
         }
-        need2DRenderRef.current = false;
+        if (stageVisible) need2DRenderRef.current = false;
       }
 
-      if (mode === '3d') {
+      if (mode === '3d' && drawSlot && stageVisible) {
         const opts = {
           level: levelRef.current,
           showLabels: showLabelsRef.current,

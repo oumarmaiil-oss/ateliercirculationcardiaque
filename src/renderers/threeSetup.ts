@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment.js';
+import { dpr3d, perf } from '../engine/perf';
 
 export function detectSoftwareGl(): boolean {
   try {
@@ -111,6 +112,10 @@ export interface ThreeViewport {
   setView: (pos: [number, number, number], target: [number, number, number]) => void;
   setClip: (active: boolean) => void;
   renderNow: () => void;
+  /** Réapplique la densité de pixels du profil de qualité courant. */
+  applyQuality: () => void;
+  /** Simplifie les matériaux (vernis, relief) pour les GPU modestes. */
+  lighten: () => void;
   dispose: () => void;
 }
 
@@ -134,16 +139,18 @@ export function make3D({
   const h = Math.max(240, container.clientHeight || 480);
 
   const renderer = new THREE.WebGLRenderer({
-    antialias: !isSoftwareGl,
+    antialias: !isSoftwareGl && perf().antialias,
     alpha: true,
-    preserveDrawingBuffer: true,
+    // false : évite une copie du tampon à chaque image (coûteux sur GPU modeste).
+    // Les captures PNG appellent renderNow() juste avant la lecture.
+    preserveDrawingBuffer: false,
     powerPreference: 'high-performance',
   });
   renderer.outputColorSpace = THREE.SRGBColorSpace;
   renderer.toneMapping = THREE.ACESFilmicToneMapping;
   renderer.toneMappingExposure = 1.1;
   renderer.localClippingEnabled = true;
-  renderer.setPixelRatio(isSoftwareGl ? 1 : Math.min(2, window.devicePixelRatio || 1));
+  renderer.setPixelRatio(isSoftwareGl ? 1 : dpr3d());
   renderer.setSize(w, h);
   renderer.domElement.style.width = '100%';
   renderer.domElement.style.height = '100%';
@@ -211,6 +218,35 @@ export function make3D({
       controls.update();
       renderer.render(scene, camera);
       viewport.needRender = false;
+    },
+    lighten() {
+      scene.traverse((obj) => {
+        const m = obj as THREE.Mesh;
+        if (!m.isMesh) return;
+        const mats = Array.isArray(m.material) ? m.material : [m.material];
+        mats.forEach((mat) => {
+          const pm = mat as THREE.MeshPhysicalMaterial;
+          let changed = false;
+          if (pm.isMeshPhysicalMaterial && (pm.clearcoat > 0 || pm.sheen > 0)) {
+            pm.clearcoat = 0;
+            pm.sheen = 0;
+            changed = true;
+          }
+          if ((pm as THREE.MeshStandardMaterial).bumpMap) {
+            (pm as THREE.MeshStandardMaterial).bumpMap = null;
+            changed = true;
+          }
+          if (changed) pm.needsUpdate = true;
+        });
+      });
+      viewport.needRender = true;
+    },
+    applyQuality() {
+      const pr = isSoftwareGl ? 1 : dpr3d();
+      if (renderer.getPixelRatio() === pr) return;
+      renderer.setPixelRatio(pr);
+      renderer.setSize(lastW, lastH, false);
+      viewport.needRender = true;
     },
     dispose() {
       if (resizeRaf) cancelAnimationFrame(resizeRaf);
