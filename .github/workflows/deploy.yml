@@ -32,7 +32,7 @@ jobs:
         run: npm run lint
 
       - name: Tests du moteur
-        run: npx tsx --test src/engine/physiology.test.ts src/engine/clinicalCases.test.ts src/engine/storyboard.test.ts
+        run: npm test
 
       - name: Compiler le site
         run: npm run build

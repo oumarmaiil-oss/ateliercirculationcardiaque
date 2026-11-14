@@ -7,6 +7,10 @@ export default defineConfig(() => {
   return {
     base: '/ateliercirculationcardiaque/',
     plugins: [react(), tailwindcss()],
+    build: {
+      // three.js est isolé dans un fichier chargé à la demande (vues 3D).
+      chunkSizeWarningLimit: 700,
+    },
     resolve: {
       alias: {
         '@': path.resolve(__dirname, '.'),

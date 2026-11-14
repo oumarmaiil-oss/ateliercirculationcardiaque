@@ -19,8 +19,17 @@ import {
   Volume2,
   VolumeX,
   X,
+  Stethoscope,
 } from 'lucide-react';
-import { createAudioEngine, getAudioCaptureTracks, initAudio, sndTick } from './audio/heartSounds';
+import {
+  FOYERS,
+  createAudioEngine,
+  getAudioCaptureTracks,
+  initAudio,
+  setFoyer,
+  sndTick,
+  type FoyerId,
+} from './audio/heartSounds';
 import { ComponentModal } from './components/ComponentModal';
 import { ControlPanel } from './components/ControlPanel';
 import { ShortcutsModal, SourcesModal, WelcomeModal } from './components/InfoModals';
@@ -88,9 +97,9 @@ import type {
 import { drawOnde, drawPVLoop, drawWiggers } from './renderers/charts';
 import { coeurHit, coeurLesionHit, createCoeurState, drawCoeur } from './renderers/coeur2d';
 import { corpsHit, corpsLesionHit, createCorpsState, drawCorps } from './renderers/corps2d';
-import { createHeart3D, type Heart3DInstance } from './renderers/heart3d';
+import type { Heart3DInstance } from './renderers/heart3d';
 import { createVaisseauState, drawVaisseau, vaisseauLesionHit } from './renderers/vaisseau2d';
-import { createVessel3D, type Vessel3DInstance } from './renderers/vessel3d';
+import type { Vessel3DInstance } from './renderers/vessel3d';
 
 const SPEEDS = [0.25, 0.5, 1, 1.5];
 
@@ -253,6 +262,7 @@ export default function App() {
   const [playing, setPlaying] = useState<boolean>(true);
   const [speed, setSpeed] = useState<number>(1);
   const [soundEnabled, setSoundEnabled] = useState<boolean>(false);
+  const [foyer, setFoyerState] = useState<FoyerId>('tous');
   const [params, setParams] = useState<SimParams>(() => {
     if (initial.mode === 'cas') {
       return applyPresetToParams(initialCase.preset).params;
@@ -552,57 +562,76 @@ export default function App() {
       vessel3dInstRef.current = null;
     }
 
+    // Three.js (~600 Ko) n'est téléchargé qu'à la première ouverture d'une vue 3D.
+    let cancelled = false;
+    let disposeInst: (() => void) | null = null;
+    const loadFail = () => {
+      if (!cancelled) showToast('La vue 3D n’a pas pu se charger : vérifiez la connexion.');
+    };
+
     if (viewMode === '3d' && tab === 'coeur') {
-      const inst = createHeart3D(
-        host,
-        (id) => {
-          if (!id) {
-            setQuickCompId(null);
-            setActiveLesionId(null);
-            return;
+      import('./renderers/heart3d').then(({ createHeart3D }) => {
+        if (cancelled) return;
+        const inst = createHeart3D(
+          host,
+          (id) => {
+            if (!id) {
+              setQuickCompId(null);
+              setActiveLesionId(null);
+              return;
+            }
+            if (id.startsWith('lesion:')) {
+              setQuickCompId(null);
+              setActiveLesionId(id.slice(7) as SceneLesionId);
+            } else {
+              setActiveLesionId(null);
+              setQuickCompId(id as ComponentId);
+            }
+          },
+          (id, cx, cy) => {
+            const comp = id && !id.startsWith('lesion:') ? (id as ComponentId) : null;
+            setHoverCompId(comp);
+            setHoverPos(id ? { x: cx, y: cy } : null);
+            if (host) host.style.cursor = id ? 'pointer' : 'grab';
           }
-          if (id.startsWith('lesion:')) {
-            setQuickCompId(null);
-            setActiveLesionId(id.slice(7) as SceneLesionId);
-          } else {
-            setActiveLesionId(null);
-            setQuickCompId(id as ComponentId);
-          }
-        },
-        (id, cx, cy) => {
-          const comp = id && !id.startsWith('lesion:') ? (id as ComponentId) : null;
-          setHoverCompId(comp);
-          setHoverPos(id ? { x: cx, y: cy } : null);
-          if (host) host.style.cursor = id ? 'pointer' : 'grab';
-        }
-      );
-      inst.setMode(heart3dMode);
-      heart3dInstRef.current = inst;
-      return () => {
-        inst.dispose();
-        heart3dInstRef.current = null;
-      };
+        );
+        inst.setMode(heart3dModeRef.current);
+        heart3dInstRef.current = inst;
+        disposeInst = () => {
+          inst.dispose();
+          heart3dInstRef.current = null;
+        };
+      }, loadFail);
     }
 
     if (viewMode === '3d' && tab === 'vaisseau') {
-      const inst = createVessel3D(host, (layer) => {
-        if (layer === 'plaque') {
-          setActiveLesionId('vessel-plaque');
-        } else if (layer === 'thrombus') {
-          setActiveLesionId('vessel-thrombus');
-        } else if (layer) {
-          setActiveLesionId(null);
-          showToast(`Couche sélectionnée : ${layer}`);
-        }
-      });
-      vessel3dInstRef.current = inst;
-      return () => {
-        inst.dispose();
-        vessel3dInstRef.current = null;
-      };
+      import('./renderers/vessel3d').then(({ createVessel3D }) => {
+        if (cancelled) return;
+        const inst = createVessel3D(host, (layer) => {
+          if (layer === 'plaque') {
+            setActiveLesionId('vessel-plaque');
+          } else if (layer === 'thrombus') {
+            setActiveLesionId('vessel-thrombus');
+          } else if (layer) {
+            setActiveLesionId(null);
+            showToast(`Couche sélectionnée : ${layer}`);
+          }
+        });
+        vessel3dInstRef.current = inst;
+        disposeInst = () => {
+          inst.dispose();
+          vessel3dInstRef.current = null;
+        };
+      }, loadFail);
     }
-    return undefined;
+    return () => {
+      cancelled = true;
+      disposeInst?.();
+    };
   }, [tab, viewMode, showToast]);
+
+  const heart3dModeRef = useRef(heart3dMode);
+  heart3dModeRef.current = heart3dMode;
 
   // Update 3D heart mode
   useEffect(() => {
@@ -950,16 +979,18 @@ export default function App() {
   }, []);
 
   const handleToggleSound = useCallback(() => {
-    setSoundEnabled((prev) => {
-      const next = !prev;
-      if (next) {
-        const ctx = initAudio(audioRef.current);
-        if (ctx && ctx.state === 'suspended') {
-          ctx.resume().catch(() => {});
-        }
-      }
-      return next;
-    });
+    // Le contexte audio doit être créé/réveillé directement dans le geste
+    // (clic/toucher), pas dans un updater React exécuté plus tard : sinon
+    // Safari iOS et Chrome Android restent muets.
+    const next = !soundRef.current;
+    if (next) initAudio(audioRef.current);
+    soundRef.current = next;
+    setSoundEnabled(next);
+  }, []);
+
+  const handleFoyer = useCallback((f: FoyerId) => {
+    setFoyerState(f);
+    setFoyer(audioRef.current, f);
   }, []);
 
   const handleStepFrame = useCallback((dir: -1 | 1) => {
@@ -1522,7 +1553,7 @@ export default function App() {
   return (
     <div className="min-h-screen flex flex-col bg-[var(--bg)] text-[var(--txt)]">
       {/* Top Bar */}
-      <header className="sticky top-0 z-30 border-b border-[var(--line)] bg-[#0b1120]/95 px-3 py-2">
+      <header className="sticky top-0 z-30 border-b border-[var(--line)] bg-[#0b1120]/95 px-3 py-2 [@media(max-height:520px)]:static">
         <div className="mx-auto flex max-w-[1460px] flex-wrap items-center justify-between gap-2">
           <div className="flex items-center gap-2.5">
             <span
@@ -1559,7 +1590,8 @@ export default function App() {
                       : 'text-[var(--muted)] hover:text-[var(--txt)]'
                   }`}
                 >
-                  {lvl === 1 ? '1 · Découvrir' : lvl === 2 ? '2 · Comprendre' : '3 · Expert'}
+                  <span className="hidden sm:inline">{lvl} · </span>
+                  {lvl === 1 ? 'Découvrir' : lvl === 2 ? 'Comprendre' : 'Expert'}
                 </button>
               ))}
             </div>
@@ -1592,7 +1624,7 @@ export default function App() {
               type="button"
               onClick={handleCapturePng}
               title="Enregistrer une image PNG de la scène"
-              className="inline-flex items-center gap-1 rounded-lg border border-[var(--line)] bg-[var(--card)] px-2.5 py-1.5 text-[11px] font-semibold text-[var(--muted)] hover:text-[var(--txt)]"
+              className="hidden sm:inline-flex items-center gap-1 rounded-lg border border-[var(--line)] bg-[var(--card)] px-2.5 py-1.5 text-[11px] font-semibold text-[var(--muted)] hover:text-[var(--txt)]"
             >
               <Camera className="h-3.5 w-3.5" />
               <span className="hidden md:inline">PNG</span>
@@ -1602,7 +1634,7 @@ export default function App() {
               type="button"
               onClick={() => setShowKeys(true)}
               aria-label="Raccourcis clavier"
-              className="inline-flex items-center justify-center rounded-lg border border-[var(--line)] bg-[var(--card)] p-1.5 text-[var(--muted)] hover:text-[var(--txt)]"
+              className="hidden md:inline-flex items-center justify-center rounded-lg border border-[var(--line)] bg-[var(--card)] p-1.5 text-[var(--muted)] hover:text-[var(--txt)]"
             >
               <Keyboard className="h-3.5 w-3.5" />
             </button>
@@ -1926,7 +1958,7 @@ export default function App() {
             ref={stageWrapRef}
             className="relative flex flex-col overflow-hidden rounded-xl border border-[var(--line)] bg-[var(--panel)]"
           >
-            <div className="stage-grid-bg relative h-[360px] sm:h-[420px] lg:h-[440px] w-full flex items-center justify-center overflow-hidden">
+            <div className="stage-grid-bg relative h-[clamp(250px,min(60svh,calc((100vw_-_26px)*0.8)),460px)] sm:h-[clamp(360px,min(58svh,calc((100vw_-_26px)*0.74)),540px)] lg:h-[clamp(440px,58vh,640px)] w-full flex items-center justify-center overflow-hidden">
               {(tab === 'corps' || viewMode === '2d') && (
                 <canvas
                   ref={canvas2dRef}
@@ -2369,6 +2401,25 @@ export default function App() {
                   )}
                   <span>Son</span>
                 </button>
+
+                {soundEnabled && (
+                  <label className="inline-flex items-center gap-1 rounded-lg border border-emerald-400/40 bg-[var(--bg)] px-1.5 py-0.5 text-[11px] text-emerald-100">
+                    <Stethoscope className="h-3.5 w-3.5" aria-hidden="true" />
+                    <span className="sr-only">Foyer d’auscultation</span>
+                    <select
+                      value={foyer}
+                      onChange={(e) => handleFoyer(e.target.value as FoyerId)}
+                      title={FOYERS.find((x) => x.id === foyer)?.lieu}
+                      className="bg-transparent py-0.5 text-[11px] font-semibold text-emerald-100 outline-none"
+                    >
+                      {FOYERS.map((x) => (
+                        <option key={x.id} value={x.id} className="bg-slate-900">
+                          {x.label}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                )}
 
                 <div className="flex items-center rounded-lg border border-[var(--line)] bg-[var(--bg)] p-0.5">
                   {SPEEDS.map((sp) => (
