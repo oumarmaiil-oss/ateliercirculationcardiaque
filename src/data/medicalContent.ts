@@ -594,7 +594,7 @@ export const EX: Record<TabId, ExampleItem[]> = {
     {
       id: 'hta-asso',
       t: 'HTA + Amloperin® 5/5 (bithérapie)',
-      w: 'Amlodipine + Périndopril : baisse de PA additive et œdème atténué de 55 %.',
+      w: 'Amlodipine + Périndopril : baisse de PA additive et œdème des chevilles moins fréquent (≈ −38 %).',
       p: { mal: ['hta'], asso: 'amlo-peri', hvg: 0.5 },
     },
     {
@@ -694,7 +694,7 @@ export const EX: Record<TabId, ExampleItem[]> = {
     },
     {
       id: 'his',
-      t: 'Bloc du faisceau de His',
+      t: 'Bloc complet infra-hisien',
       w: 'Échappement ventriculaire très lent, QRS larges.',
       p: { act: { his: 'bloque' } },
     },

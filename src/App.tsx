@@ -2664,7 +2664,7 @@ export default function App() {
                       mmHg
                     </span>
                     {trtImpact.oedemeSoloICa > 0.05 && trtImpact.all.raa > 0 && (
-                      <span className="text-sky-200">Œdème −55 %</span>
+                      <span className="text-sky-200">Œdème −38 %</span>
                     )}
                     {Math.abs(trtImpact.all.congestion - trtImpact.baseline.congestion) > 0.08 && (
                       <span className="text-amber-200">

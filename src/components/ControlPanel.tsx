@@ -669,7 +669,7 @@ export const ControlPanel: React.FC<ControlPanelProps> = ({
                       {fxComp.oedemeSoloICa > 0.05 && r.raa > 0 && (
                         <div className="flex items-center justify-between pt-1 border-t border-emerald-400/20 text-[10.5px] text-sky-200">
                           <span>Œdème chevilles (IEC vs ICA seul)</span>
-                          <span className="mono font-semibold">−55 %</span>
+                          <span className="mono font-semibold">−38 %</span>
                         </div>
                       )}
                       {r.tr.statine && (

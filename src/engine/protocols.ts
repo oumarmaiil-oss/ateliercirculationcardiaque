@@ -31,7 +31,7 @@ export function getTreatmentProtocol(
           id: 'hta-oedeme',
           conditionTitle: 'HTA & œdème sous Amlodipine seule',
           summary:
-            'Associer un IEC (Périndopril) à l’Amlodipine en 1 comprimé (Amloperin® 5/10) ouvre la veinule capillaire, réduit l’œdème d’≈ 55 % et normalise la PA.',
+            'Associer un IEC (Périndopril) à l’Amlodipine en 1 comprimé (Amloperin® 5/10) ouvre la veinule capillaire, réduit l’œdème d’≈ 38 % et normalise la PA.',
           classes: ['Amloperin® 5/10 (Périndopril 5 + Amlodipine 10)'],
           presetPatch: {
             trt: [],
@@ -241,7 +241,7 @@ export function getTreatmentProtocol(
       conditionTitle: isSevere ? 'Hypertension artérielle sévère' : 'Hypertension artérielle',
       summary: isSevere
         ? 'Trithérapie synergique (Tensoplus®) pour abaisser rapidement les résistances et protéger cœur, reins et cerveau.'
-        : 'Bithérapie fixe Amloperin® (Périndopril + Amlodipine) : baisse tensionnelle additive et réduction de 55 % des œdèmes de cheville.',
+        : 'Bithérapie fixe Amloperin® (Périndopril + Amlodipine) : baisse tensionnelle additive et réduction d’environ 38 % des œdèmes de cheville.',
       classes: [
         isSevere
           ? 'Tensoplus® 10/2,5/10 (IEC + Indapamide + Amlodipine)'

@@ -261,7 +261,7 @@ export const CONFIG_COEUR = {
     },
     anticoagulant: {
       nom: 'Anticoagulant oral (AOD / AVK)',
-      classe: 'Fluidifiant sanguin (cascade de coagulation)',
+      classe: 'Anticoagulant (bloque la cascade de coagulation)',
       mecanisme:
         'Empêche la formation de fibrine et de caillot dans l’oreillette gauche en fibrillation auriculaire (réduit le risque d’AVC d’environ 64 %).',
       reductionAVC_FA: 0.64,
@@ -283,8 +283,8 @@ export const CONFIG_COEUR = {
       nom: 'Amloperin® · Bithérapie (Amlodipine + Périndopril)',
       composants: ['ica', 'iec'],
       explication:
-        'Bithérapie fixe : deux mécanismes complémentaires (antagoniste calcique + IEC). Les baisses de pression s’additionnent et le périndopril dilate aussi la veinule post-capillaire, ce qui atténue d’environ 55 % l’œdème des chevilles dû à l’amlodipine.',
-      reductionOedeme: 0.55,
+        'Bithérapie fixe : deux mécanismes complémentaires (antagoniste calcique + IEC). Les baisses de pression s’additionnent et le périndopril dilate aussi la veinule post-capillaire, ce qui réduit d’environ 38 % la fréquence de l’œdème des chevilles dû à l’amlodipine (méta-analyse Makani, Am J Med 2011 ; effet plus marqué avec un IEC qu’avec un ARA II).',
+      reductionOedeme: 0.38,
       presentations: [
         { id: '5-5', nom: '5 mg / 5 mg (standard)', doses: { ica: 1, iec: 1 } },
         { id: '10-5', nom: '10 mg / 5 mg', doses: { ica: 2, iec: 1 } },
@@ -297,7 +297,7 @@ export const CONFIG_COEUR = {
       composants: ['iec', 'diuretique', 'ica'],
       explication:
         'Trithérapie fixe en un seul comprimé : IEC + diurétique apparenté thiazidique + inhibiteur calcique. Agit simultanément sur les résistances artériolaires, le système rénine-angiotensine et le sel/volume, tout en améliorant l’observance et en limitant l’œdème des chevilles.',
-      reductionOedeme: 0.55,
+      reductionOedeme: 0.38,
       presentations: [
         { id: '5-1.25-5', nom: '5 / 1,25 / 5 mg', doses: { iec: 1, diuretique: 1, ica: 1 } },
         { id: '5-1.25-10', nom: '5 / 1,25 / 10 mg', doses: { iec: 1, diuretique: 1, ica: 2 } },
