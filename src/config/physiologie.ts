@@ -374,7 +374,7 @@ export const CONFIG_COEUR = {
   sons: {
     b1: { volume: 0.7 },
     b2: { volume: 0.6 },
-    souffleRA: { frequence: 420, volume: 0.22 },
+    souffleRA: { frequence: 320, volume: 0.24 },
     souffleIM: { frequence: 520, volume: 0.2 },
     souffleIA: { frequence: 680, volume: 0.18 },
     roulementRM: { frequence: 140, volume: 0.25 },

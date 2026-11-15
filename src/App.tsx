@@ -101,6 +101,7 @@ import type {
   VisualStoryOverlay,
 } from './engine/types';
 import { drawOnde, drawPVLoop, drawWiggers } from './renderers/charts';
+import { drawValvePlane } from './renderers/valvePlane';
 import { coeurHit, coeurLesionHit, createCoeurState, drawCoeur } from './renderers/coeur2d';
 import { corpsHit, corpsLesionHit, createCorpsState, drawCorps } from './renderers/corps2d';
 import type { Heart3DInstance } from './renderers/heart3d';
@@ -300,6 +301,8 @@ export default function App() {
   const [sidebarOpen, setSidebarOpen] = useState<boolean>(true);
   const [compareUntreated, setCompareUntreated] = useState<boolean>(false);
   const [sideBySide, setSideBySide] = useState<boolean>(false);
+  const [showValves, setShowValves] = useState<boolean>(false);
+  const valveCanvasRef = useRef<HTMLCanvasElement>(null);
   const [hoverCompId, setHoverCompId] = useState<ComponentId | null>(null);
   const [hoverPos, setHoverPos] = useState<{ x: number; y: number } | null>(null);
   const [showWelcome, setShowWelcome] = useState<boolean>(() => {
@@ -693,6 +696,43 @@ export default function App() {
   const heart3dModeRef = useRef(heart3dMode);
   heart3dModeRef.current = heart3dMode;
 
+  // 3D : toucher une structure oriente la caméra vers elle.
+  useEffect(() => {
+    if (quickCompId && viewMode === '3d' && tab === 'coeur') heart3dInstRef.current?.focus(quickCompId);
+  }, [quickCompId, viewMode, tab]);
+
+  // Une lésion de valve n'est visible que de l'intérieur : passer en coupe et viser la valve.
+  // (Lésion posée sur la valve, ou maladie valvulaire : RA, IM.)
+  const valveLesionKey = (pp: SimParams) =>
+    [
+      pp.act.aortique || (pp.mal.ra ? 'ra' : ''),
+      pp.act.mitrale || (pp.mal.im ? 'im' : ''),
+      pp.act.tricuspide || '',
+      pp.act.pulmonaire || '',
+    ].join('|');
+  const prevValveKeyRef = useRef(valveLesionKey(params));
+  useEffect(() => {
+    const prevKey = prevValveKeyRef.current.split('|');
+    const key = valveLesionKey(params);
+    prevValveKeyRef.current = key;
+    if (viewMode !== '3d' || tab !== 'coeur') return;
+    const cur = key.split('|');
+    const valvesL: ValveId[] = ['aortique', 'mitrale', 'tricuspide', 'pulmonaire'];
+    const idx = cur.findIndex((v, i) => v && v !== prevKey[i]);
+    if (idx < 0) {
+      if (prevKey.some(Boolean) && !cur.some(Boolean)) heart3dInstRef.current?.focus(null);
+      return;
+    }
+    if (heart3dModeRef.current === 'exterieur') {
+      setHeart3dMode('coupe');
+      showToastRef.current('Vue en coupe : les valves se voient de l’intérieur du cœur.');
+    }
+    heart3dInstRef.current?.focus(valvesL[idx]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [params, viewMode, tab]);
+
+
+
   // Profil de qualité modifié : réappliquer la densité de pixels 3D et redessiner.
   useEffect(() => {
     heart3dInstRef.current?.viewport.applyQuality();
@@ -952,6 +992,11 @@ export default function App() {
         }
       }
 
+      // Plan valvulaire (vue du dessus), en 2D comme en 3D.
+      if (drawSlot && curTab === 'coeur' && valveCanvasRef.current && stageVisible) {
+        drawValvePlane(valveCanvasRef.current, clk, p, r);
+      }
+
       // Sync timeline scrubber & compact telemetry DOM without React re-renders
       uiSyncAccum += realDt;
       if (uiSyncAccum >= 0.2) {
@@ -1149,6 +1194,22 @@ export default function App() {
     setFoyerState(f);
     setFoyer(audioRef.current, f);
   }, []);
+
+  // Son activé : toucher une valve y place le stéthoscope (foyer correspondant).
+  useEffect(() => {
+    if (!quickCompId || !soundEnabled) return;
+    const map: Partial<Record<ComponentId, FoyerId>> = {
+      aortique: 'aortique',
+      pulmonaire: 'pulmonaire',
+      mitrale: 'mitral',
+      tricuspide: 'tricuspide',
+    };
+    const f = map[quickCompId];
+    if (f && f !== foyer) {
+      handleFoyer(f);
+      showToastRef.current(`Stéthoscope placé au ${FOYERS.find((x) => x.id === f)?.label.toLowerCase()}.`);
+    }
+  }, [quickCompId, soundEnabled, foyer, handleFoyer]);
 
   const enableSound = useCallback(() => {
     initAudio(audioRef.current);
@@ -2219,6 +2280,17 @@ export default function App() {
                 <div ref={stage3dRef} className="h-full w-full" />
               )}
 
+              {tab === 'coeur' && showValves && (
+                <canvas
+                  ref={valveCanvasRef}
+                  aria-label="Plan valvulaire vu d’en haut"
+                  className="pointer-events-none absolute right-2 top-12 z-10 w-[min(46%,250px)] rounded-xl shadow-xl sm:right-3 sm:top-14"
+                  style={{ aspectRatio: '300 / 230' }}
+                  width={300}
+                  height={230}
+                />
+              )}
+
               {/* Sidebar Collapse Toggle + 3D Heart mode bar */}
               <div className="absolute left-2 top-2 z-10 flex max-w-[calc(100%-104px)] flex-wrap items-center gap-1.5 sm:left-3 sm:top-3 sm:max-w-[calc(100%-130px)]">
                 <button
@@ -2613,6 +2685,24 @@ export default function App() {
                       </button>
                     ))}
                   </div>
+                )}
+
+                {tab === 'coeur' && (
+                  <button
+                    type="button"
+                    onClick={() => setShowValves((v) => !v)}
+                    aria-pressed={showValves}
+                    title="Afficher les 4 valves vues d’en haut, en temps réel"
+                    className={`rounded-lg border px-2.5 py-1 text-[11px] font-semibold transition whitespace-nowrap ${
+                      showValves
+                        ? 'border-amber-300/70 bg-amber-500/20 text-amber-100'
+                        : 'border-[var(--line)] bg-[var(--card)] text-[var(--muted)] hover:text-[var(--txt)]'
+                    }`}
+                    aria-label="Valves (vue du dessus)"
+                  >
+                    <span className="sm:hidden">Valves</span>
+                    <span className="hidden sm:inline">Valves (vue du dessus)</span>
+                  </button>
                 )}
 
                 <button

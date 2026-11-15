@@ -102,15 +102,42 @@ export function initAudio(snd: HeartAudioEngine): AudioContext | null {
   for (let i = 0; i < n; i++) d[i] = r() * 2 - 1;
   snd.noise = buf;
 
+  // Chaîne « stéthoscope » : coupe des infra-graves inutiles, bosse de résonance vers
+  // 110 Hz, coupure des aigus (pavillon), puis légère résonance du thorax.
   const master = ac.createGain();
-  master.gain.value = 0.9;
+  master.gain.value = 0.95;
+  const hp = ac.createBiquadFilter();
+  hp.type = 'highpass';
+  hp.frequency.value = 24;
+  const body = ac.createBiquadFilter();
+  body.type = 'peaking';
+  body.frequency.value = 110;
+  body.Q.value = 0.9;
+  body.gain.value = 4;
+  const steth = ac.createBiquadFilter();
+  steth.type = 'lowpass';
+  steth.frequency.value = 1100;
+  steth.Q.value = 0.6;
+  const dry = ac.createGain();
+  dry.gain.value = 0.82;
+  const wet = ac.createGain();
+  wet.gain.value = 0.3;
+  const chest = ac.createConvolver();
+  chest.buffer = chestImpulse(ac);
   const comp = ac.createDynamicsCompressor();
-  comp.threshold.value = -16;
-  comp.knee.value = 10;
-  comp.ratio.value = 4;
-  comp.attack.value = 0.003;
-  comp.release.value = 0.12;
-  master.connect(comp);
+  comp.threshold.value = -14;
+  comp.knee.value = 12;
+  comp.ratio.value = 3.5;
+  comp.attack.value = 0.004;
+  comp.release.value = 0.14;
+  master.connect(hp);
+  hp.connect(body);
+  body.connect(steth);
+  steth.connect(dry);
+  steth.connect(chest);
+  chest.connect(wet);
+  dry.connect(comp);
+  wet.connect(comp);
   comp.connect(ac.destination);
   if (typeof ac.createMediaStreamDestination === 'function') {
     const streamDest = ac.createMediaStreamDestination();
@@ -144,41 +171,91 @@ export function getAudioCaptureTracks(snd: HeartAudioEngine): MediaStreamTrack[]
   return snd.streamDest ? snd.streamDest.stream.getAudioTracks() : [];
 }
 
-/** Tampon d'un bruit bref (transitoire amorti basse fréquence + texture). */
+/** Réponse impulsionnelle courte de la cage thoracique (≈ 60 ms, sourde). */
+function chestImpulse(ac: AudioContext): AudioBuffer {
+  const sr = ac.sampleRate;
+  const n = Math.round(sr * 0.06);
+  const buf = ac.createBuffer(1, n, sr);
+  const d = buf.getChannelData(0);
+  const r = seededRng(41);
+  let lp = 0;
+  for (let i = 0; i < n; i++) {
+    const t = i / sr;
+    lp += (r() * 2 - 1 - lp) * 0.12; // bruit filtré (grave)
+    d[i] = lp * Math.exp(-t / 0.014);
+  }
+  d[0] = 1;
+  return buf;
+}
+
+/**
+ * Bruits du cœur par synthèse modale : chaque bruit est la vibration amortie des
+ * valves et des parois (plusieurs modes légèrement inharmoniques). Les harmoniques
+ * entre 80 et 300 Hz rendent le bruit perceptible même sur un haut-parleur de
+ * téléphone ou d'ordinateur portable, qui ne restitue pas les fondamentales graves.
+ */
 function hsBuffer(ac: AudioContext, kind: 'b1' | 'b2' | 'b3'): AudioBuffer {
   const sr = ac.sampleRate;
-  const spec =
+  type Mode = [freq: number, amp: number, tau: number];
+  const spec: { dur: number; modes: Mode[]; attack: number; split: number; k2: number; noise: number; seed: number } =
     kind === 'b1'
-      ? { dur: 0.16, f: [46, 70, 104, 150], a: [1, 0.75, 0.42, 0.2], tau: 0.028, split: 0.022, k2: 0.65, noise: 1.6, seed: 11 }
+      ? {
+          // B1 : grave, un peu long, deux composantes (mitrale puis tricuspide).
+          dur: 0.17,
+          modes: [[48, 1, 0.034], [74, 0.85, 0.03], [112, 0.6, 0.024], [158, 0.36, 0.018], [230, 0.16, 0.012]],
+          attack: 0.004,
+          split: 0.022,
+          k2: 0.6,
+          noise: 0.35,
+          seed: 11,
+        }
       : kind === 'b2'
-        ? // Une seule composante (A2 ou P2) : le dédoublement est programmé à part.
-          { dur: 0.1, f: [68, 102, 148, 215], a: [1, 0.7, 0.45, 0.25], tau: 0.017, split: 0, k2: 0, noise: 1.4, seed: 23 }
-        : // B3/B4 : sourds, très graves, sans texture claquante.
-          { dur: 0.12, f: [28, 38, 52], a: [1, 0.6, 0.25], tau: 0.035, split: 0, k2: 0, noise: 0.35, seed: 31 };
+        ? {
+            // B2 : plus bref, plus claqué, plus aigu (une composante, A2 ou P2).
+            dur: 0.11,
+            modes: [[72, 0.8, 0.022], [108, 1, 0.02], [160, 0.7, 0.016], [235, 0.38, 0.011], [330, 0.15, 0.008]],
+            attack: 0.0025,
+            split: 0,
+            k2: 0,
+            noise: 0.3,
+            seed: 23,
+          }
+        : {
+            // B3/B4 : sourds, attaque lente, mais avec des harmoniques audibles.
+            dur: 0.13,
+            modes: [[38, 1, 0.045], [62, 0.8, 0.04], [96, 0.5, 0.03], [140, 0.22, 0.02]],
+            attack: 0.014,
+            split: 0,
+            k2: 0,
+            noise: 0.08,
+            seed: 31,
+          };
   const n = Math.round(sr * spec.dur);
   const buf = ac.createBuffer(1, n, sr);
   const d = buf.getChannelData(0);
   const r = seededRng(spec.seed);
-  let lp = 0;
+  const phases = spec.modes.map(() => r() * Math.PI * 2);
   const comp = (t: number, amp: number) => {
     if (t < 0) return 0;
-    const env = (1 - Math.exp(-t / (kind === 'b3' ? 0.012 : 0.0035))) * Math.exp(-t / spec.tau);
+    const att = 1 - Math.exp(-t / spec.attack);
     let v = 0;
-    spec.f.forEach((f, i) => {
-      const fg = f * (1 - 0.18 * Math.min(1, t / 0.06));
-      v += spec.a[i] * Math.sin(2 * Math.PI * fg * t + i);
+    spec.modes.forEach(([f, a, tau], i) => {
+      // Légère chute de fréquence pendant l'amortissement (tension qui se relâche).
+      const fg = f * (1 - 0.1 * Math.min(1, t / 0.05));
+      v += a * Math.exp(-t / tau) * Math.sin(2 * Math.PI * fg * t + phases[i]);
     });
-    return amp * env * v;
+    return amp * att * v;
   };
+  let lp = 0;
   let mx = 0;
   for (let i = 0; i < n; i++) {
     const t = i / sr;
-    lp += (r() * 2 - 1 - lp) * 0.08;
-    const envN = (1 - Math.exp(-t / 0.003)) * Math.exp(-t / (spec.tau * 0.8));
+    lp += (r() * 2 - 1 - lp) * 0.1;
+    const envN = (1 - Math.exp(-t / 0.002)) * Math.exp(-t / 0.012);
     let v = comp(t, 1) + (spec.k2 ? comp(t - spec.split, spec.k2) : 0) + spec.noise * lp * envN;
-    v = Math.tanh(1.5 * v);
-    // Fondu de sortie pour éviter tout clic en fin de tampon.
-    const tail = Math.min(1, (n - i) / (sr * 0.008));
+    // Saturation douce : enrichit en harmoniques (perception sur petits haut-parleurs).
+    v = Math.tanh(1.3 * v);
+    const tail = Math.min(1, (n - i) / (sr * 0.01));
     d[i] = v * tail;
     mx = Math.max(mx, Math.abs(d[i]));
   }
@@ -191,7 +268,7 @@ function thump(
   kind: 'b1' | 'b2' | 'b3',
   gain: number,
   delay = 0,
-  cutoff = 700
+  cutoff = 900
 ): void {
   const ac = snd.ctx;
   if (!ac || gain <= 0.01) return;
@@ -269,7 +346,25 @@ function murmur(
     gg.gain.setValueAtTime(v, t0 + Math.max(0.03, dur - 0.03));
     gg.gain.linearRampToValueAtTime(0.0001, t0 + dur);
   }
-  chain.connect(gg);
+  // Texture : le RA est râpeux (modulation rapide irrégulière), le roulement du RM
+  // vibre (trémolo grave). Les souffles de fuite restent doux et réguliers.
+  if (shape === 'losange' || shape === 'roulement') {
+    const lfo = ac.createOscillator();
+    lfo.type = shape === 'losange' ? 'sawtooth' : 'sine';
+    lfo.frequency.value = shape === 'losange' ? 38 + snd.rnd() * 10 : 24;
+    const depth = ac.createGain();
+    depth.gain.value = shape === 'losange' ? 0.45 : 0.35;
+    const am = ac.createGain();
+    am.gain.value = 1;
+    lfo.connect(depth);
+    depth.connect(am.gain);
+    chain.connect(am);
+    am.connect(gg);
+    lfo.start(t0);
+    lfo.stop(t0 + dur + 0.03);
+  } else {
+    chain.connect(gg);
+  }
   gg.connect(out);
   ns.start(t0);
   ns.stop(t0 + dur + 0.03);
@@ -362,7 +457,7 @@ export function sndTick(
     // B4 : télédiastole, juste après la contraction auriculaire (~ 80 ms avant B1).
     if (f.b4 && b.a && b.a.t + 0.06 < b.sys) {
       const tB4 = b.a.t + 0.06;
-      if (passed(tB4)) thump(snd, 'b3', 0.55 * fg.b4, 0, 160);
+      if (passed(tB4)) thump(snd, 'b3', 0.62 * fg.b4, 0, 320);
     }
 
     if (passed(b.sys)) {
@@ -394,7 +489,7 @@ export function sndTick(
     // B3 : ~ 140 ms après B2, fin du remplissage rapide.
     const tB3 = b.ej1 + 0.14;
     if (f.b3 && tB3 < b.nx.t - 0.05 && passed(tB3)) {
-      thump(snd, 'b3', 0.6 * fg.b3, 0, 160);
+      thump(snd, 'b3', 0.68 * fg.b3, 0, 320);
     }
 
     if (ms && passed(b.ivr + 0.04)) {

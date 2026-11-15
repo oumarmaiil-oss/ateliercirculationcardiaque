@@ -35,6 +35,13 @@ Simulateur pédagogique et interactif de physiologie, physiopathologie et pharma
 - **Baroréflexe simplifié** : une chute de pression accélère le cœur et resserre les artérioles (compensation partielle).
 - **Cas infarctus** : IEC et bêtabloquant démarrés à petite dose ; critère de tolérance PAS ≥ 90 mmHg.
 
+### 3D et son (version 4)
+- **Lésions visibles en 3D** : feuillets épaissis et jaunes (rétrécissement) ou roses (fuite), calcifications, jets de globules jaunes à travers une valve rétrécie et roses en sens inverse à travers une valve qui fuit, dilatation de l’aorte après un rétrécissement serré, aorte rigide pâle, HVG et dilatations d’oreillettes visibles, étiquettes de lésion. Une lésion de valve fait passer en coupe et oriente la caméra ; toucher une structure la cadre.
+- **Débit pulsatile** (2D et 3D) : le sang ne franchit une valve que lorsqu’elle est ouverte, freiné si elle est rétrécie.
+- **Valves vues d’en haut** : les 4 orifices en temps réel (fente en cas de rétrécissement, orifice résiduel en cas de fuite).
+- **Circulation du corps** : les deux reins perfusés ; débit propre à chaque organe (cerveau autorégulé, reins moins perfusés en bas débit, membres selon les résistances).
+- **Son** : synthèse modale des bruits avec harmoniques audibles sur haut-parleurs de téléphone et d’ordinateur, filtre stéthoscope et résonance thoracique, RA râpeux, roulement mitral vibrant ; toucher une valve avec le son activé place le stéthoscope sur son foyer.
+
 ### 2. Deux modes complémentaires
 - **Exploration libre** : démarre dans un état physiologique normal (`120/80 mmHg`, `FC 70/min`, `0` pathologie active) puis permet d’explorer des exemples rapides ou de combiner maladies, valves et traitements à la demande.
 - **Pathologies à soigner (7 cas cliniques évalués)** : HTA avec œdème sous Amlodipine, HTA résistante, insuffisance cardiaque à FE réduite, rétrécissement aortique serré avec défi d’auscultation à l’aveugle, fibrillation auriculaire à risque embolique, infarctus du myocarde (IVA) & plaque vulnérable, dysfonction ventriculaire droite.
