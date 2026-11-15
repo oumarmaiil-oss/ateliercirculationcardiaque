@@ -377,7 +377,9 @@ export function compute(
     const mb = doseEffect('betabloquant', dose.betabloquant);
     fc *= lessBy(T.betabloquant.fcFois, mb);
     contract *= lessBy(T.betabloquant.contractiliteFois, mb);
-    if (icChron && (m.ic || acts.vg === 'faible')) {
+    // Bénéfice à long terme sur la fonction VG : IC à FE réduite, et dysfonction VG
+    // après infarctus (FE ≈ 40 %, essais post-IDM type CAPRICORN).
+    if (icChron) {
       contract *= T.betabloquant.contractiliteICLongTerme;
       notes.push(
         'Insuffisance cardiaque à FE réduite : à long terme, le bêtabloquant ralentit le cœur, le protège de l’adrénaline et améliore la FE et la survie (simulé « après quelques mois »). On le démarre à petite dose, une fois le patient stabilisé.'
@@ -448,14 +450,24 @@ export function compute(
     0.25 * Math.max(0, pog - N.ptdvg);
 
   const starling = Math.min(MO.starlingPlafond, Math.pow(fpi * preloadF, MO.starlingExposant));
-  const fill = 1 - Math.max(0, fcEff - MO.seuilTachycardie) * MO.pertePerBattement;
+  let fill = 1 - Math.max(0, fcEff - MO.seuilTachycardie) * MO.pertePerBattement;
   const kick = MO.contributionAuriculaire * (1 + 0.4 * d.hvg);
   const kickF = atriaOK ? (rythme === 'bav3' ? 1 - kick * 0.5 : 1) : 1 - kick;
-  const hrF = fcEff < N.fc ? Math.min(1.4, Math.pow(N.fc / fcEff, 0.35)) : 1;
+  let hrF = fcEff < N.fc ? Math.min(1.4, Math.pow(N.fc / fcEff, 0.35)) : 1;
 
-  let svtot0 = N.ves * contract * starling * fill * kickF * hrF;
-  if (rf > 0) svtot0 *= 1.2;
-  if (rfAo > 0) svtot0 *= 1.35;
+  const regurgF = (rf > 0 ? 1.2 : 1) * (rfAo > 0 ? 1.35 : 1);
+  let svtot0 = N.ves * contract * starling * fill * kickF * hrF * regurgF;
+
+  // Baroréflexe (compensation à court terme d'une baisse de pression) :
+  // tachycardie + vasoconstriction artériolaire, proportionnelles au déficit de PAM.
+  // Il ne compense qu'une partie de la chute. Freiné par le bêtabloquant ; la
+  // fréquence ne peut pas monter si elle est imposée (bloc complet, échappement).
+  const fcBase = fcEff;
+  const resistBase = resist;
+  const canAccelerate = rythme === 'sinus' || rythme === 'fa' || rythme === 'flutter' || rythme === 'esv';
+  const kHR = canAccelerate ? (tr.betabloquant ? 0.35 : 1.1) : 0;
+  const kR = 0.8;
+  let baro = 0;
 
   // Postcharge itérative
   let svtot = svtot0;
@@ -466,7 +478,17 @@ export function compute(
   let tej = 0.3;
   let after = PAM_N;
 
-  for (let i = 0; i < 8; i++) {
+  for (let i = 0; i < 14; i++) {
+    if (i > 0) {
+      const target = clamp((PAM_N - 3 - pam) / PAM_N, 0, 0.35);
+      baro = 0.5 * baro + 0.5 * target;
+      fcEff = Math.min(180, fcBase * (1 + kHR * baro));
+      resist = resistBase * (1 + kR * baro);
+      fill = 1 - Math.max(0, fcEff - MO.seuilTachycardie) * MO.pertePerBattement;
+      hrF = fcEff < N.fc ? Math.min(1.4, Math.pow(N.fc / fcEff, 0.35)) : 1;
+      svtot0 = N.ves * contract * starling * fill * kickF * hrF * regurgF;
+      svtot = svtot0 * Math.pow(PAM_N / after, MO.postchargeExposant);
+    }
     svf = svtot * (1 - rf) * (1 - rfAo);
     dc = (fcEff * svf) / 1000;
     pam = dc * RES_N * resist + pvc;
@@ -475,6 +497,12 @@ export function compute(
     grad = Math.pow(q / (44.3 * surfAo), 2);
     after = pam + grad;
     svtot = svtot0 * Math.pow(PAM_N / after, MO.postchargeExposant);
+  }
+
+  if (baro > 0.04) {
+    notes.push(
+      `Baroréflexe : la pression baisse, le cœur accélère (${Math.round(fcBase)} → ${Math.round(fcEff)}/min) et les artérioles se resserrent pour la maintenir en partie.`
+    );
   }
 
   const svEj = svtot * (1 - rf);

@@ -27,6 +27,14 @@ Simulateur pédagogique et interactif de physiologie, physiopathologie et pharma
 - **Qualité d’affichage adaptative** (Complet / Équilibré / Léger) selon l’appareil, avec réglage manuel.
 - **Signalement d’erreur** (bouton « Signaler ») : message WhatsApp pré-rempli avec la scène et les constantes, vers @drSOWOUMAR, sans afficher de numéro.
 
+### Visualisation et moteur (version 3)
+- **Circulation en boucles complètes** (artère → capillaires → veine) : le sang passe progressivement du rouge au bleu dans les organes et du bleu au rouge dans les poumons ; veines pulmonaires, retours veineux des bras et du rein ajoutés ; le rouge artériel s’assombrit si la saturation baisse.
+- **Côte à côte** (vue Corps) : le même patient avec et sans traitement, en simultané.
+- **Diagramme de Wiggers** : bandes de systole et repères B1/B2 traversant pressions et ECG.
+- **Cœur 3D** : relief de fibres myocardiques et teinte tissulaire.
+- **Baroréflexe simplifié** : une chute de pression accélère le cœur et resserre les artérioles (compensation partielle).
+- **Cas infarctus** : IEC et bêtabloquant démarrés à petite dose ; critère de tolérance PAS ≥ 90 mmHg.
+
 ### 2. Deux modes complémentaires
 - **Exploration libre** : démarre dans un état physiologique normal (`120/80 mmHg`, `FC 70/min`, `0` pathologie active) puis permet d’explorer des exemples rapides ou de combiner maladies, valves et traitements à la demande.
 - **Pathologies à soigner (7 cas cliniques évalués)** : HTA avec œdème sous Amlodipine, HTA résistante, insuffisance cardiaque à FE réduite, rétrécissement aortique serré avec défi d’auscultation à l’aveugle, fibrillation auriculaire à risque embolique, infarctus du myocarde (IVA) & plaque vulnérable, dysfonction ventriculaire droite.

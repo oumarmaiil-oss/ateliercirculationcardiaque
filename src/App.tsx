@@ -299,6 +299,7 @@ export default function App() {
   const [quickCompId, setQuickCompId] = useState<ComponentId | null>(null);
   const [sidebarOpen, setSidebarOpen] = useState<boolean>(true);
   const [compareUntreated, setCompareUntreated] = useState<boolean>(false);
+  const [sideBySide, setSideBySide] = useState<boolean>(false);
   const [hoverCompId, setHoverCompId] = useState<ComponentId | null>(null);
   const [hoverPos, setHoverPos] = useState<{ x: number; y: number } | null>(null);
   const [showWelcome, setShowWelcome] = useState<boolean>(() => {
@@ -408,6 +409,18 @@ export default function App() {
     if (!TRT_IDS.some((k) => t[k])) return null;
     return effetTraitements(params, { hvg: dynHvg }, treatedComputed);
   }, [params, dynHvg, treatedComputed]);
+  // Vue côte à côte : même patient, même instant, sans aucun médicament.
+  const untreatedSim = useMemo(() => {
+    if (!sideBySide || !trtImpact || tab !== 'corps') return null;
+    const offTrt = Object.fromEntries(TRT_IDS.map((k) => [k, false])) as Record<TraitementId, boolean>;
+    const off: SimParams = { ...effectiveParams, trt: offTrt, asso: null };
+    return { p: off, r: compute(off, dynState) };
+  }, [sideBySide, trtImpact, tab, effectiveParams, dynState]);
+  const untreatedRef = useRef(untreatedSim);
+  untreatedRef.current = untreatedSim;
+  const canvasCmpRef = useRef<HTMLCanvasElement>(null);
+  const corpsCmpStateRef = useRef(createCorpsState());
+
   const caseEvaluation = useMemo(() => {
     if (appMode !== 'cas') return null;
     return evaluateCaseTreatment(activeCase, params, { hvg: dynHvg }, treatedComputed, auscultGuess);
@@ -862,6 +875,19 @@ export default function App() {
                 );
               },
             });
+            const u = untreatedRef.current;
+            if (u && canvasCmpRef.current) {
+              drawCorps({
+                cv: canvasCmpRef.current,
+                clk,
+                p: u.p,
+                r: u.r,
+                state: corpsCmpStateRef.current,
+                level: levelRef.current,
+                showLabels: false,
+                isLightParticles: isLight,
+              });
+            }
           } else if (curTab === 'coeur') {
             drawCoeur({
               cv,
@@ -1967,13 +1993,9 @@ export default function App() {
         {/* Left Control Panel */}
         <div
           data-tour="panneau"
-          className={
-            mobileSheet === 'scene'
-              ? sidebarOpen
-                ? 'hidden lg:block'
-                : 'hidden'
-              : 'block'
-          }
+          className={`${
+            mobileSheet === 'scene' ? (sidebarOpen ? 'hidden lg:block' : 'hidden') : 'block'
+          } lg:sticky lg:top-[58px] lg:self-start`}
         >
           <ControlPanel
             appMode={appMode}
@@ -2162,7 +2184,7 @@ export default function App() {
                     setHoverPos(null);
                   }}
                   style={{
-                    width: '100%',
+                    width: untreatedSim ? '50%' : '100%',
                     height: '100%',
                     maxWidth: '100%',
                     maxHeight: '100%',
@@ -2171,6 +2193,26 @@ export default function App() {
                   width={canvasDims.w}
                   height={canvasDims.h}
                 />
+              )}
+              {untreatedSim && (
+                <>
+                  <canvas
+                    ref={canvasCmpRef}
+                    aria-label="Même patient sans traitement"
+                    style={{ width: '50%', height: '100%', objectFit: 'contain' }}
+                    width={canvasDims.w}
+                    height={canvasDims.h}
+                  />
+                  <div className="pointer-events-none absolute inset-x-2 bottom-2 z-10 grid grid-cols-2 gap-2 text-center text-[11px] font-semibold">
+                    <div className="rounded-md border border-emerald-400/50 bg-emerald-950/80 px-2 py-1 text-emerald-100">
+                      Avec traitement · PA {fmt(computed.pas)}/{fmt(computed.pad)}
+                    </div>
+                    <div className="rounded-md border border-red-400/50 bg-red-950/80 px-2 py-1 text-red-100">
+                      Sans traitement · PA {fmt(untreatedSim.r.pas)}/{fmt(untreatedSim.r.pad)}
+                    </div>
+                  </div>
+                  <div className="pointer-events-none absolute left-1/2 top-3 bottom-12 w-px bg-[var(--line2)]" />
+                </>
               )}
 
               {viewMode === '3d' && tab !== 'corps' && (
@@ -2652,7 +2694,25 @@ export default function App() {
                   </button>
                 )}
 
-                {trtImpact && (
+                {trtImpact && tab === 'corps' && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setCompareUntreated(false);
+                      setSideBySide((v) => !v);
+                    }}
+                    title="Afficher côte à côte le même patient avec et sans ses médicaments"
+                    className={`inline-flex items-center gap-1 rounded-lg border px-2.5 py-1 text-[11px] font-semibold transition whitespace-nowrap ${
+                      sideBySide
+                        ? 'border-emerald-400/70 bg-emerald-500/25 text-emerald-100'
+                        : 'border-[var(--line)] bg-[var(--card)] text-[var(--muted)] hover:text-[var(--txt)]'
+                    }`}
+                  >
+                    <span>{sideBySide ? 'Côte à côte : ON' : 'Côte à côte'}</span>
+                  </button>
+                )}
+
+                {trtImpact && !(sideBySide && tab === 'corps') && (
                   <button
                     type="button"
                     onClick={() => setCompareUntreated((v) => !v)}

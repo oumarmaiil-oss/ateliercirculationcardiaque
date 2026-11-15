@@ -134,7 +134,7 @@ export const ControlPanel: React.FC<ControlPanelProps> = ({
   };
 
   return (
-    <aside className="flex flex-col rounded-xl border border-[var(--line)] bg-[var(--panel)] lg:max-h-[calc(100vh-118px)]">
+    <aside className="flex flex-col rounded-xl border border-[var(--line)] bg-[var(--panel)] lg:max-h-[calc(100vh-72px)]">
       {/* Pane switch (desktop; mobile uses Scène / Exemples / Réglages bar above) */}
       {appMode === 'libre' ? (
         <div className="hidden lg:grid grid-cols-2 border-b border-[var(--line)] p-1.5 gap-1">

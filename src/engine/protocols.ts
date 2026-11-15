@@ -93,16 +93,17 @@ export function getTreatmentProtocol(
           id: 'idm-plaque',
           conditionTitle: 'Infarctus du myocarde (IDM) & plaque coronaire',
           summary:
-            'Désobstruction en urgence puis quadrithérapie de prévention secondaire pour prévenir la récidive et le remodelage du ventricule gauche.',
+            'Désobstruction en urgence puis quadrithérapie de prévention secondaire. IEC et bêtabloquant démarrent à petite dose et sont augmentés selon la tolérance (PA, FC).',
           classes: [
             'Antiagrégant (aspirine)',
             'Statine forte (LDL −54 %)',
-            'IEC (anti-remodelage)',
-            'Bêtabloquant (épargne en O₂)',
+            'IEC à petite dose (anti-remodelage)',
+            'Bêtabloquant à petite dose (épargne en O₂)',
           ],
           presetPatch: {
             trt: ['antiagregant', 'statine', 'iec', 'betabloquant'],
-            dose: { statine: 1, iec: 1, betabloquant: 1 },
+            // IEC et bêtabloquant démarrés à petite dose puis augmentés selon la PA et la FC.
+            dose: { statine: 1, iec: 0.5, betabloquant: 0.5 },
           },
         };
       case 'vd-htap':
@@ -127,10 +128,10 @@ export function getTreatmentProtocol(
       conditionTitle: 'Infarctus du myocarde (IDM)',
       summary:
         'Après désobstruction rapide de l’artère coupable (angioplastie / thrombolyse), la quadrithérapie réduit la mortalité, stabilise la plaque et limite la dilatation du VG.',
-      classes: ['Antiagrégant (aspirine)', 'Statine forte', 'IEC', 'Bêtabloquant'],
+      classes: ['Antiagrégant (aspirine)', 'Statine forte', 'IEC à petite dose', 'Bêtabloquant à petite dose'],
       presetPatch: {
         trt: ['antiagregant', 'statine', 'iec', 'betabloquant'],
-        dose: { statine: 1, iec: 1, betabloquant: 1 },
+        dose: { statine: 1, iec: 0.5, betabloquant: 0.5 },
       },
     };
   }

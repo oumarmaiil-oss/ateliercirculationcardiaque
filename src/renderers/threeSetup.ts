@@ -34,26 +34,85 @@ export function afterDraw(gl: WebGLRenderingContext | WebGL2RenderingContext): v
   gl.finish();
 }
 
+/** Fibres myocardiques : stries obliques ondulées, adoucies (relief). */
 export function createTissueBumpTexture(): THREE.CanvasTexture {
+  const S = 256;
   const cv = document.createElement('canvas');
-  cv.width = 128;
-  cv.height = 128;
+  cv.width = S;
+  cv.height = S;
   const ctx = cv.getContext('2d')!;
   ctx.fillStyle = '#808080';
-  ctx.fillRect(0, 0, 128, 128);
-  for (let i = 0; i < 420; i++) {
-    const x = (i * 73) % 128;
-    const y = (i * 41) % 128;
-    const w = 14 + (i % 18);
-    const h = 2 + (i % 3);
-    const v = 104 + ((i * 29) % 48);
-    ctx.fillStyle = `rgb(${v},${v},${v})`;
-    ctx.fillRect(x, y, w, h);
+  ctx.fillRect(0, 0, S, S);
+  let seed = 7;
+  const rnd = () => ((seed = (seed * 16807) % 2147483647) / 2147483647);
+  ctx.lineCap = 'round';
+  for (let i = 0; i < 260; i++) {
+    const y0 = rnd() * S;
+    const v = Math.round(96 + rnd() * 70);
+    ctx.strokeStyle = `rgb(${v},${v},${v})`;
+    ctx.lineWidth = 1 + rnd() * 2.2;
+    ctx.beginPath();
+    // Fibres obliques (≈ 30°) légèrement ondulées, répétées pour un raccord sans couture.
+    for (let k = -1; k <= 1; k++) {
+      for (let x = 0; x <= S; x += 8) {
+        const y = y0 + k * S + x * 0.55 + Math.sin((x + y0) * 0.05) * 3;
+        if (x === 0) ctx.moveTo(x, y);
+        else ctx.lineTo(x, y);
+      }
+    }
+    ctx.stroke();
+  }
+  // Adoucit le relief (si le navigateur le permet).
+  try {
+    const tmp = document.createElement('canvas');
+    tmp.width = S;
+    tmp.height = S;
+    const t2 = tmp.getContext('2d')!;
+    t2.filter = 'blur(1.2px)';
+    t2.drawImage(cv, 0, 0);
+    ctx.clearRect(0, 0, S, S);
+    ctx.drawImage(tmp, 0, 0);
+  } catch {
+    /* relief non adouci */
   }
   const tex = new THREE.CanvasTexture(cv);
   tex.wrapS = THREE.RepeatWrapping;
   tex.wrapT = THREE.RepeatWrapping;
-  tex.repeat.set(3, 3);
+  tex.repeat.set(2, 2);
+  return tex;
+}
+
+/** Variation de teinte du tissu (marbrures discrètes) multipliée à la couleur du matériau. */
+export function createTissueColorTexture(): THREE.CanvasTexture {
+  const S = 128;
+  const cv = document.createElement('canvas');
+  cv.width = S;
+  cv.height = S;
+  const ctx = cv.getContext('2d')!;
+  ctx.fillStyle = '#f2f2f2';
+  ctx.fillRect(0, 0, S, S);
+  let seed = 11;
+  const rnd = () => ((seed = (seed * 16807) % 2147483647) / 2147483647);
+  for (let i = 0; i < 140; i++) {
+    const x = rnd() * S;
+    const y = rnd() * S;
+    const r = 4 + rnd() * 14;
+    const v = Math.round(205 + rnd() * 50);
+    const g = ctx.createRadialGradient(x, y, 0, x, y, r);
+    g.addColorStop(0, `rgba(${v},${Math.round(v * 0.94)},${Math.round(v * 0.94)},0.55)`);
+    g.addColorStop(1, 'rgba(255,255,255,0)');
+    ctx.fillStyle = g;
+    for (const dx of [-S, 0, S]) for (const dy of [-S, 0, S]) {
+      ctx.beginPath();
+      ctx.arc(x + dx, y + dy, r, 0, Math.PI * 2);
+      ctx.fill();
+    }
+  }
+  const tex = new THREE.CanvasTexture(cv);
+  tex.colorSpace = THREE.SRGBColorSpace;
+  tex.wrapS = THREE.RepeatWrapping;
+  tex.wrapT = THREE.RepeatWrapping;
+  tex.repeat.set(2, 2);
   return tex;
 }
 

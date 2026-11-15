@@ -38,19 +38,98 @@ export function createCorpsState(): CorpsRuntimeState {
   };
 }
 
-const ROUTES: { pts: Point2D[]; col: string; n: number }[] = [
-  { pts: [[380, 198], [380, 148], [368, 108], [358, 70]], col: '#f87171', n: 5 },
-  { pts: [[380, 210], [380, 278], [412, 300], [418, 308]], col: '#f87171', n: 4 },
-  { pts: [[380, 210], [380, 326], [344, 420], [340, 505]], col: '#f87171', n: 9 },
-  { pts: [[380, 210], [380, 326], [416, 420], [420, 505]], col: '#f87171', n: 9 },
-  { pts: [[380, 200], [312, 186], [286, 250], [282, 300]], col: '#f87171', n: 5 },
-  { pts: [[380, 200], [448, 186], [474, 250], [478, 300]], col: '#f87171', n: 5 },
-  { pts: [[364, 70], [374, 140], [374, 202]], col: '#60a5fa', n: 4 },
-  { pts: [[346, 505], [352, 405], [374, 328], [374, 222]], col: '#60a5fa', n: 9 },
-  { pts: [[414, 505], [408, 405], [374, 328]], col: '#60a5fa', n: 6 },
-  { pts: [[374, 202], [326, 196], [314, 218]], col: '#60a5fa', n: 3 },
-  { pts: [[374, 202], [434, 196], [446, 218]], col: '#60a5fa', n: 3 },
+/**
+ * Circulation en boucles fermées : artère → lit capillaire → veine.
+ * Le long de chaque boucle, la couleur des globules passe progressivement
+ * du rouge (sang oxygéné) au bleu (sang désaturé) dans les capillaires des
+ * organes, et du bleu au rouge dans les capillaires pulmonaires.
+ * cap = [début, fin] du lit capillaire, en fraction de la longueur.
+ */
+interface FlowLoop {
+  id: 'cerveau' | 'rein' | 'jambeG' | 'jambeD' | 'brasG' | 'brasD' | 'poumonG' | 'poumonD';
+  pts: Point2D[];
+  cap: [number, number];
+  pulm: boolean;
+  n: number;
+}
+
+const LOOPS: FlowLoop[] = [
+  {
+    id: 'cerveau',
+    pts: [[380, 198], [380, 148], [368, 108], [358, 72], [354, 56], [366, 44], [380, 48], [372, 62], [364, 72], [374, 140], [374, 202]],
+    cap: [0.36, 0.62],
+    pulm: false,
+    n: 9,
+  },
+  {
+    id: 'rein',
+    pts: [[380, 268], [380, 290], [410, 296], [420, 304], [416, 312], [404, 306], [378, 300], [374, 280]],
+    cap: [0.38, 0.62],
+    pulm: false,
+    n: 4,
+  },
+  {
+    id: 'jambeG',
+    pts: [[380, 210], [380, 326], [341, 500], [336, 510], [346, 514], [347, 500], [374, 328], [374, 222]],
+    cap: [0.44, 0.56],
+    pulm: false,
+    n: 14,
+  },
+  {
+    id: 'jambeD',
+    pts: [[380, 210], [380, 326], [419, 500], [424, 510], [414, 514], [413, 500], [374, 328], [374, 222]],
+    cap: [0.45, 0.55],
+    pulm: false,
+    n: 14,
+  },
+  {
+    id: 'brasG',
+    pts: [[380, 200], [312, 186], [284, 298], [286, 306], [292, 300], [298, 252], [320, 204], [374, 206]],
+    cap: [0.44, 0.58],
+    pulm: false,
+    n: 8,
+  },
+  {
+    id: 'brasD',
+    pts: [[380, 200], [448, 186], [476, 298], [474, 306], [468, 300], [462, 252], [440, 204], [374, 206]],
+    cap: [0.44, 0.58],
+    pulm: false,
+    n: 8,
+  },
+  {
+    // Artère pulmonaire (bleue) → capillaires alvéolaires → veine pulmonaire (rouge) vers l'OG.
+    id: 'poumonG',
+    pts: [[374, 202], [326, 196], [318, 214], [326, 232], [342, 222], [354, 210], [390, 206]],
+    cap: [0.3, 0.62],
+    pulm: true,
+    n: 6,
+  },
+  {
+    id: 'poumonD',
+    pts: [[374, 202], [434, 196], [442, 214], [434, 232], [418, 222], [406, 210], [390, 206]],
+    cap: [0.3, 0.62],
+    pulm: true,
+    n: 6,
+  },
 ];
+
+const LOOP_LEN: number[] = [];
+
+/** Rouge artériel, assombri vers le violet quand la saturation baisse. */
+function arterialRgb(sat: number): [number, number, number] {
+  const k = clamp((97 - sat) / 25, 0, 1);
+  return [Math.round(lerp(248, 150, k)), Math.round(lerp(113, 90, k)), Math.round(lerp(113, 200, k))];
+}
+const VENOUS: [number, number, number] = [96, 165, 250];
+
+function mixRgb(a: [number, number, number], b: [number, number, number], t: number): string {
+  return `rgb(${Math.round(lerp(a[0], b[0], t))},${Math.round(lerp(a[1], b[1], t))},${Math.round(lerp(a[2], b[2], t))})`;
+}
+
+function smooth01(x: number): number {
+  const t = clamp(x, 0, 1);
+  return t * t * (3 - 2 * t);
+}
 
 const EMBOL_PATH: Point2D[] = [
   [392, 202],
@@ -74,28 +153,62 @@ const LEG_EMBOL_PATH: Point2D[] = [
   [416, 415],
 ];
 
-function flowDraw(
+function drawLoop(
   c: CanvasRenderingContext2D,
   arr: number[],
   idx: number,
-  pts: Point2D[],
+  loop: FlowLoop,
   n: number,
   dt: number,
   speedPx: number,
-  col: string,
-  rad = 3.2
+  art: [number, number, number],
+  rad: number
 ): void {
-  const L = polyLen(pts);
+  if (LOOP_LEN[idx] === undefined) LOOP_LEN[idx] = polyLen(loop.pts);
+  const L = LOOP_LEN[idx];
   if (L < 1) return;
   if (arr[idx] === undefined) arr[idx] = 0;
   arr[idx] = (((arr[idx] + dt * speedPx) % L) + L) % L;
-  c.fillStyle = col;
+  const [c0, c1] = loop.cap;
   for (let i = 0; i < n; i++) {
-    const p = polyAt(pts, (arr[idx] + (L * i) / n) % L);
+    const d = (arr[idx] + (L * i) / n) % L;
+    const u = d / L;
+    // 0 = couleur d'entrée, 1 = couleur de sortie (désaturation ou réoxygénation).
+    const k = smooth01((u - c0) / (c1 - c0));
+    const t = loop.pulm ? 1 - k : k;
+    const pt = polyAt(loop.pts, d);
+    c.fillStyle = mixRgb(art, VENOUS, t);
     c.beginPath();
-    c.arc(p[0], p[1], rad, 0, Math.PI * 2);
+    c.arc(pt[0], pt[1], rad, 0, Math.PI * 2);
     c.fill();
   }
+}
+
+/** Lit capillaire : fin réseau dont la couleur passe d'un bout à l'autre. */
+function drawCapBed(c: CanvasRenderingContext2D, loop: FlowLoop, art: [number, number, number]): void {
+  const L = polyLen(loop.pts);
+  const a = polyAt(loop.pts, L * loop.cap[0]);
+  const b = polyAt(loop.pts, L * loop.cap[1]);
+  const g = c.createLinearGradient(a[0], a[1], b[0], b[1]);
+  const from = loop.pulm ? `rgb(${VENOUS.join(',')})` : `rgb(${art.join(',')})`;
+  const to = loop.pulm ? `rgb(${art.join(',')})` : `rgb(${VENOUS.join(',')})`;
+  g.addColorStop(0, from);
+  g.addColorStop(1, to);
+  c.save();
+  c.strokeStyle = g;
+  c.globalAlpha = 0.55;
+  c.lineWidth = 1.4;
+  c.lineCap = 'round';
+  c.beginPath();
+  const steps = 18;
+  for (let i = 0; i <= steps; i++) {
+    const u = loop.cap[0] + ((loop.cap[1] - loop.cap[0]) * i) / steps;
+    const pt = polyAt(loop.pts, L * u);
+    if (i === 0) c.moveTo(pt[0], pt[1]);
+    else c.lineTo(pt[0], pt[1]);
+  }
+  c.stroke();
+  c.restore();
 }
 
 export function corpsLesionHit(
@@ -301,8 +414,19 @@ export function drawCorps({
   strokePath([[374, 190], [374, 70]], '#3b82f6', 3.5);
   strokePath([[374, 210], [374, 326], [346, 505]], '#3b82f6', 4.5 + (r.pvc > 8 ? 1.5 : 0));
   strokePath([[374, 326], [414, 505]], '#3b82f6', 4.5 + (r.pvc > 8 ? 1.5 : 0));
-  strokePath([[374, 200], [314, 198]], '#3b82f6', 3.5);
-  strokePath([[374, 200], [446, 198]], '#3b82f6', 3.5);
+  strokePath([[374, 200], [326, 196], [318, 214]], '#3b82f6', 3.5);
+  strokePath([[374, 200], [434, 196], [442, 214]], '#3b82f6', 3.5);
+  // Retours veineux des bras et du rein.
+  strokePath([[292, 300], [298, 252], [320, 204], [374, 206]], 'rgba(59,130,246,0.75)', 2.6);
+  strokePath([[468, 300], [462, 252], [440, 204], [374, 206]], 'rgba(59,130,246,0.75)', 2.6);
+  strokePath([[404, 306], [378, 300]], 'rgba(59,130,246,0.75)', 2.4);
+  // Veines pulmonaires : sang ré-oxygéné vers l'oreillette gauche.
+  {
+    const pv = arterialRgb(r.satArt);
+    const pvCol = `rgba(${pv[0]},${pv[1]},${pv[2]},0.85)`;
+    strokePath([[326, 232], [342, 222], [354, 210], [390, 206]], pvCol, 3);
+    strokePath([[434, 232], [418, 222], [406, 210], [390, 206]], pvCol, 3);
+  }
 
   if (vasodil) {
     // Subtle emerald vasodilation halo around main arteries when vasodilators act
@@ -353,27 +477,19 @@ export function drawCorps({
     });
   }
 
-  // Blood flow particles integrated cleanly via dt
+  // Sang en circulation : boucles fermées avec changement de couleur dans les capillaires.
   const spd = 72 * clamp(r.dc / DC_N, 0.25, 2.5);
-  const step = isLightParticles ? 2 : 1;
-  for (let i = 0; i < ROUTES.length; i += step) {
-    const rt = ROUTES[i];
-    const n = isLightParticles ? Math.max(2, Math.round(rt.n / 2)) : rt.n;
-    const isBl = p.mal.avc && i === 0;
-    const isEmb = r.pulmEmb && i >= 9;
-    const isJmb = p.ischJambe && i === 3;
-    flowDraw(
-      c,
-      state.flow,
-      i,
-      rt.pts,
-      n,
-      dt,
-      isBl || isEmb || isJmb ? 0 : spd,
-      rt.col,
-      2.6
-    );
-  }
+  const art = arterialRgb(r.satArt);
+  LOOPS.forEach((loop) => drawCapBed(c, loop, art));
+  LOOPS.forEach((loop, i) => {
+    // Mode léger : moitié moins de globules, mais toutes les boucles restent animées.
+    const n = isLightParticles ? Math.max(3, Math.round(loop.n / 2)) : loop.n;
+    const blocked =
+      (p.mal.avc && loop.id === 'cerveau') ||
+      (r.pulmEmb && loop.pulm) ||
+      (p.ischJambe && loop.id === 'jambeD');
+    drawLoop(c, state.flow, i, loop, n, dt, blocked ? 0 : spd, art, 2.6);
+  });
 
   // Beating heart icon in thorax (dilated & weaker beat if LV/RV weak, amber ring if stenotic)
   const vc = ventContraction(clk, r, clk.t);

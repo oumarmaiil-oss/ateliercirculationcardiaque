@@ -622,6 +622,14 @@ export function evaluateCaseTreatment(
         ok: !fatalTrap && !(t.anticoagulant && t.antiagregant),
         detail: `K⁺ ${r.bio.potassium.toFixed(1)} · DFG ${r.bio.dfg}`,
       });
+      criteres.push({
+        label: 'Tolérance hémodynamique (PAS ≥ 90 mmHg)',
+        ok: r.pas >= 90,
+        detail:
+          r.pas >= 90
+            ? `PAS ${fmt(r.pas)} mmHg · FC ${fmt(r.fcEff)}/min`
+            : `Hypotension (PAS ${fmt(r.pas)}) : réduire les doses d’IEC / bêtabloquant`,
+      });
       break;
     }
 
