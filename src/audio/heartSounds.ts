@@ -289,15 +289,25 @@ export interface AuscultationFindings {
   roulementRM: boolean;
 }
 
-/** Ce que l'on doit entendre, d'après l'état hémodynamique (testable sans audio). */
-export function auscultationFindings(p: SimParams, r: ComputedResult): AuscultationFindings {
+/**
+ * Ce que l'on doit entendre, d'après l'état hémodynamique (testable sans audio).
+ * hvg : hypertrophie ventriculaire gauche réelle (0–1), pas la cible.
+ */
+export function auscultationFindings(p: SimParams, r: ComputedResult, hvg = 0): AuscultationFindings {
   const sinusAtrial = r.atriaOK && r.rythme !== 'fa' && r.rythme !== 'flutter';
   const raActive = r.surfAo < 1.5 || actOf('pulmonaire', p) === 'stenose';
+  const rmActive = actOf('mitrale', p) === 'stenose';
   return {
-    // B3 : surcharge de volume protodiastolique (IC à FE basse, congestion, IM importante).
-    b3: r.fe < 0.42 || r.pog >= 15 || r.rf >= 0.3,
-    // B4 : impossible sans contraction auriculaire efficace (FA, flutter).
-    b4: sinusAtrial && r.rythme !== 'bav3' && (r.hvgCible >= 0.3 || r.surfAo < 1.2 || r.ptdvg >= 11 || r.zoneIDM !== null),
+    // B3 : remplissage rapide d'un VG dilaté/défaillant ou surchargé en volume (IC à FE
+    // basse, pression télédiastolique VG élevée, IM importante). Absent dans le RM :
+    // l'obstacle mitral empêche justement ce remplissage rapide.
+    b3: !rmActive && (r.fe < 0.42 || r.ptdvg >= 15 || r.rf >= 0.3),
+    // B4 : systole auriculaire contre un VG peu compliant (HVG, RA, ischémie, VG rigide
+    // à FE conservée). Impossible sans contraction auriculaire efficace (FA, flutter).
+    b4:
+      sinusAtrial &&
+      r.rythme !== 'bav3' &&
+      (hvg >= 0.4 || r.surfAo < 1.2 || r.zoneIDM !== null || (r.ptdvg >= 11 && r.fe >= 0.45)),
     souffleRA: raActive ? clamp(Math.max(r.grad / 40, actOf('pulmonaire', p) === 'stenose' ? 0.7 : 0), 0.3, 1.25) : 0,
     souffleIM: r.rf > 0 ? clamp(r.rf / 0.45, 0.3, 1.2) : 0,
     souffleIA: r.rfAo > 0 ? clamp(r.rfAo / 0.42, 0.3, 1.2) : 0,
@@ -310,7 +320,8 @@ export function sndTick(
   clk: CardiacClockState,
   p: SimParams,
   r: ComputedResult,
-  soundEnabled: boolean
+  soundEnabled: boolean,
+  hvg = 0
 ): void {
   const t = clk.t;
   if (!soundEnabled || !snd.ctx || !clk.playing || snd.ctx.state !== 'running') {
@@ -338,7 +349,7 @@ export function sndTick(
   }
 
   const fg = FOYER_GAIN[snd.foyer];
-  const f = auscultationFindings(p, r);
+  const f = auscultationFindings(p, r, hvg);
   const spd = clk.speed;
   const passed = (x: number) => x > snd.lastT && x <= t;
   const ms = f.roulementRM;

@@ -222,7 +222,7 @@ export const ControlPanel: React.FC<ControlPanelProps> = ({
                 >
                   <div className="flex items-center gap-2">
                     <span className="text-[11px] font-bold uppercase tracking-wider text-[var(--txt)]">
-                      1 · Pathologies & cibles
+                      Pathologies & cibles
                     </span>
                     {(activeMalCount > 0 || activeActCount > 0) && (
                       <span className="mono rounded bg-red-500/20 px-1.5 py-0.5 text-[10px] font-semibold text-red-200">
@@ -470,7 +470,7 @@ export const ControlPanel: React.FC<ControlPanelProps> = ({
                   className="flex w-full items-center justify-between px-3 py-2 text-left"
                 >
                   <span className="text-[11px] font-bold uppercase tracking-wider text-[var(--txt)]">
-                    2 · Paramètres physiologiques
+                    Paramètres physiologiques
                   </span>
                   <ChevronDown
                     className={`h-4 w-4 text-[var(--muted)] transition-transform ${
@@ -547,7 +547,7 @@ export const ControlPanel: React.FC<ControlPanelProps> = ({
               >
                 <div className="flex items-center gap-2">
                   <span className="text-[11px] font-bold uppercase tracking-wider text-[var(--txt)]">
-                    3 · Médicaments & associations
+                    Médicaments & associations
                   </span>
                   {trtActiveList.length > 0 && (
                     <span className="mono rounded bg-emerald-500/20 px-1.5 py-0.5 text-[10px] font-semibold text-emerald-200">
@@ -610,13 +610,13 @@ export const ControlPanel: React.FC<ControlPanelProps> = ({
 
                           {active && (
                             <div className="mt-2 space-y-1.5">
-                              <div className="grid grid-cols-2 gap-1">
+                              <div className="grid grid-cols-1 gap-1">
                                 {A.presentations.map((pr) => (
                                   <button
                                     key={pr.id}
                                     type="button"
                                     onClick={() => onSelectPres(aid, pr.id)}
-                                    className={`rounded border px-2 py-1 text-[10.5px] font-medium transition ${
+                                    className={`rounded border px-2 py-1 text-left text-[10.5px] font-medium transition ${
                                       curPres === pr.id
                                         ? 'border-emerald-400 bg-emerald-500/25 text-emerald-100'
                                         : 'border-[var(--line)] bg-[var(--card)] text-[var(--muted)] hover:text-[var(--txt)]'

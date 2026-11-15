@@ -31,8 +31,8 @@ export function getTreatmentProtocol(
           id: 'hta-oedeme',
           conditionTitle: 'HTA & œdème sous Amlodipine seule',
           summary:
-            'Associer un IEC (Périndopril) à l’Amlodipine en 1 comprimé (Amloperin® 5/10) ouvre la veinule capillaire, réduit l’œdème d’≈ 38 % et normalise la PA.',
-          classes: ['Amloperin® 5/10 (Périndopril 5 + Amlodipine 10)'],
+            'Passer à Amloperin® (amlodipine 5 mg + périndopril 10 mg) en 1 comprimé : on réduit l’amlodipine (l’œdème dépend de la dose) et l’IEC ouvre la veinule post-capillaire et prend le relais sur la PA.',
+          classes: ['Amloperin® · amlodipine 5 mg + périndopril 10 mg'],
           presetPatch: {
             trt: [],
             asso: 'amlo-peri',
@@ -45,7 +45,7 @@ export function getTreatmentProtocol(
           conditionTitle: 'HTA résistante sous bithérapie',
           summary:
             'Escalader vers la trithérapie en 1 comprimé (Tensoplus® : Périndopril + Indapamide + Amlodipine) agit sur 3 voies complémentaires.',
-          classes: ['Tensoplus® 10/2,5/10 (IEC + Thiazidique + ICA)'],
+          classes: ['Tensoplus® · périndopril 10 + indapamide 2,5 + amlodipine 10 mg'],
           presetPatch: {
             trt: [],
             asso: 'peri-inda-amlo',
@@ -244,8 +244,8 @@ export function getTreatmentProtocol(
         : 'Bithérapie fixe Amloperin® (Périndopril + Amlodipine) : baisse tensionnelle additive et réduction d’environ 38 % des œdèmes de cheville.',
       classes: [
         isSevere
-          ? 'Tensoplus® 10/2,5/10 (IEC + Indapamide + Amlodipine)'
-          : 'Amloperin® 5/5 (IEC + Amlodipine)',
+          ? 'Tensoplus® · périndopril 10 + indapamide 2,5 + amlodipine 10 mg'
+          : 'Amloperin® · amlodipine 5 mg + périndopril 5 mg',
       ],
       presetPatch: isSevere
         ? { trt: [], asso: 'peri-inda-amlo', pres: { 'peri-inda-amlo': '10-2.5-10' } }

@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState } from 'react';
 import {
   AlertTriangle,
   Camera,
@@ -13,6 +13,7 @@ import {
   Repeat,
   SkipBack,
   SkipForward,
+  SlidersHorizontal,
   Square,
   Stethoscope,
   XCircle,
@@ -358,6 +359,7 @@ export const ConsequenceTimelineDock: React.FC<ConsequenceTimelineDockProps> = (
   onCapturePng,
   onToggleVideoRecord,
 }) => {
+  const [showOptions, setShowOptions] = useState(false);
   const sevClass =
     projection.severite === 'ok'
       ? 'text-emerald-300'
@@ -468,48 +470,21 @@ export const ConsequenceTimelineDock: React.FC<ConsequenceTimelineDockProps> = (
 
           <button
             type="button"
-            onClick={onToggleAutoPause}
-            aria-pressed={storyAutoPause}
-            className={`rounded-md border px-2 py-1 text-[11px] font-semibold whitespace-nowrap shrink-0 transition ${
-              storyAutoPause
+            onClick={() => setShowOptions((v) => !v)}
+            aria-expanded={showOptions}
+            className={`inline-flex items-center gap-1 rounded-md border px-2 py-1 text-[11px] font-semibold whitespace-nowrap shrink-0 transition ${
+              showOptions
                 ? 'border-sky-400/60 bg-sky-500/15 text-sky-200'
                 : 'border-[var(--line)] bg-[var(--card)] text-[var(--muted)] hover:text-[var(--txt)]'
             }`}
-            title="Marquer une pause à chaque moment clé pour observer la zone"
+            title="Options du film : pause aux moments clés, alternance des deux issues, inspection de la zone"
           >
-            Pause auto : {storyAutoPause ? 'ON' : 'OFF'}
-          </button>
-
-          <button
-            type="button"
-            onClick={onToggleAlternate}
-            aria-pressed={storyAlternate}
-            className={`inline-flex items-center gap-1 rounded-md border px-2 py-1 text-[11px] font-semibold whitespace-nowrap shrink-0 transition ${
-              storyAlternate
-                ? 'border-emerald-400/60 bg-emerald-500/15 text-emerald-200'
-                : 'border-[var(--line)] bg-[var(--card)] text-[var(--muted)] hover:text-[var(--txt)]'
-            }`}
-            title="Alterner automatiquement Sans traitement puis Avec traitement pendant le film"
-          >
-            <Repeat className="h-3 w-3" />
-            <span>Alterner 2 issues : {storyAlternate ? 'ON' : 'OFF'}</span>
+            <SlidersHorizontal className="h-3 w-3" />
+            <span>Options</span>
           </button>
         </div>
 
         <div className="flex flex-wrap items-center gap-1.5">
-          <button
-            type="button"
-            onClick={onInspectZone}
-            className={`inline-flex items-center gap-1 rounded-md border px-2.5 py-1 text-[11px] font-semibold whitespace-nowrap shrink-0 transition ${
-              inspectionPaused
-                ? 'border-sky-400/70 bg-sky-500/20 text-sky-100'
-                : 'border-[var(--line2)] bg-[var(--card)] text-[var(--txt)] hover:border-sky-400/60'
-            }`}
-          >
-            <Crosshair className="h-3 w-3" />
-            <span>Inspecter la zone</span>
-          </button>
-
           <button
             type="button"
             onClick={onCapturePng}
@@ -537,6 +512,51 @@ export const ConsequenceTimelineDock: React.FC<ConsequenceTimelineDockProps> = (
           </button>
         </div>
       </div>
+
+      {showOptions && (
+        <div className="flex flex-wrap items-center gap-1.5 rounded-lg border border-[var(--line)] bg-[var(--bg)] px-2.5 py-1.5">
+          <button
+            type="button"
+            onClick={onToggleAutoPause}
+            aria-pressed={storyAutoPause}
+            className={`rounded-md border px-2 py-1 text-[11px] font-semibold whitespace-nowrap shrink-0 transition ${
+              storyAutoPause
+                ? 'border-sky-400/60 bg-sky-500/15 text-sky-200'
+                : 'border-[var(--line)] bg-[var(--card)] text-[var(--muted)] hover:text-[var(--txt)]'
+            }`}
+            title="Marquer une pause à chaque moment clé pour observer la zone"
+          >
+            Pause auto : {storyAutoPause ? 'ON' : 'OFF'}
+          </button>
+
+          <button
+            type="button"
+            onClick={onToggleAlternate}
+            aria-pressed={storyAlternate}
+            className={`inline-flex items-center gap-1 rounded-md border px-2 py-1 text-[11px] font-semibold whitespace-nowrap shrink-0 transition ${
+              storyAlternate
+                ? 'border-emerald-400/60 bg-emerald-500/15 text-emerald-200'
+                : 'border-[var(--line)] bg-[var(--card)] text-[var(--muted)] hover:text-[var(--txt)]'
+            }`}
+            title="Alterner automatiquement Sans traitement puis Avec traitement pendant le film"
+          >
+            <Repeat className="h-3 w-3" />
+            <span>Alterner 2 issues : {storyAlternate ? 'ON' : 'OFF'}</span>
+          </button>
+          <button
+            type="button"
+            onClick={onInspectZone}
+            className={`inline-flex items-center gap-1 rounded-md border px-2.5 py-1 text-[11px] font-semibold whitespace-nowrap shrink-0 transition ${
+              inspectionPaused
+                ? 'border-sky-400/70 bg-sky-500/20 text-sky-100'
+                : 'border-[var(--line2)] bg-[var(--card)] text-[var(--txt)] hover:border-sky-400/60'
+            }`}
+          >
+            <Crosshair className="h-3 w-3" />
+            <span>Inspecter la zone</span>
+          </button>
+        </div>
+      )}
 
       {/* 5 chronological key-moment horizon buttons */}
       <div className="grid grid-cols-2 sm:grid-cols-5 gap-1.5">

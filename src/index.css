@@ -8,8 +8,8 @@
   --line: rgba(148, 163, 184, 0.16);
   --line2: rgba(148, 163, 184, 0.3);
   --txt: #eef3fb;
-  --muted: #93a4bd;
-  --dim: #6f809b;
+  --muted: #a3b2c8;
+  --dim: #8492aa;
   --accent: #38bdf8;
   --red: #f87171;
   --blue: #60a5fa;
@@ -92,4 +92,15 @@ input[type="range"].atelier-range::-moz-range-thumb {
   background: var(--accent);
   border: 2px solid #070b14;
   cursor: pointer;
+}
+
+/* Lisibilité sur téléphone : les micro-tailles de l'interface (10–12 px)
+   sont agrandies sous 640 px de large. CSS hors couche : prime sur les
+   utilitaires Tailwind. */
+@media (max-width: 640px) {
+  .text-\[10px\] { font-size: 11.5px; }
+  .text-\[10\.5px\] { font-size: 12px; }
+  .text-\[11px\] { font-size: 12.5px; }
+  .text-\[11\.5px\] { font-size: 13px; }
+  .text-\[12px\] { font-size: 13px; }
 }
