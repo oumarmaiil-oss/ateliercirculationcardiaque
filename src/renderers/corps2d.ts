@@ -46,7 +46,7 @@ export function createCorpsState(): CorpsRuntimeState {
  * cap = [début, fin] du lit capillaire, en fraction de la longueur.
  */
 interface FlowLoop {
-  id: 'cerveau' | 'rein' | 'jambeG' | 'jambeD' | 'brasG' | 'brasD' | 'poumonG' | 'poumonD';
+  id: 'cerveau' | 'rein' | 'reinG' | 'jambeG' | 'jambeD' | 'brasG' | 'brasD' | 'poumonG' | 'poumonD';
   pts: Point2D[];
   cap: [number, number];
   pulm: boolean;
@@ -64,6 +64,13 @@ const LOOPS: FlowLoop[] = [
   {
     id: 'rein',
     pts: [[380, 268], [380, 290], [410, 296], [420, 304], [416, 312], [404, 306], [378, 300], [374, 280]],
+    cap: [0.38, 0.62],
+    pulm: false,
+    n: 4,
+  },
+  {
+    id: 'reinG',
+    pts: [[380, 268], [380, 290], [350, 296], [340, 304], [344, 312], [356, 306], [376, 300], [374, 280]],
     cap: [0.38, 0.62],
     pulm: false,
     n: 4,
@@ -420,6 +427,7 @@ export function drawCorps({
   strokePath([[292, 300], [298, 252], [320, 204], [374, 206]], 'rgba(59,130,246,0.75)', 2.6);
   strokePath([[468, 300], [462, 252], [440, 204], [374, 206]], 'rgba(59,130,246,0.75)', 2.6);
   strokePath([[404, 306], [378, 300]], 'rgba(59,130,246,0.75)', 2.4);
+  strokePath([[356, 306], [376, 300]], 'rgba(59,130,246,0.75)', 2.4);
   // Veines pulmonaires : sang ré-oxygéné vers l'oreillette gauche.
   {
     const pv = arterialRgb(r.satArt);
@@ -445,6 +453,7 @@ export function drawCorps({
   strokePath([[380, 198], [312, 186], [284, 300]], artCol, 3.5 * artMul);
   strokePath([[380, 198], [448, 186], [476, 300]], artCol, 3.5 * artMul);
   strokePath([[380, 290], [414, 298]], artCol, 2.8 * artMul);
+  strokePath([[380, 290], [346, 298]], artCol, 2.8 * artMul);
 
   const drawClotMarker = (cx: number, cy: number, rad: number) => {
     c.save();
@@ -488,7 +497,19 @@ export function drawCorps({
       (p.mal.avc && loop.id === 'cerveau') ||
       (r.pulmEmb && loop.pulm) ||
       (p.ischJambe && loop.id === 'jambeD');
-    drawLoop(c, state.flow, i, loop, n, dt, blocked ? 0 : spd, art, 2.6);
+    // Débit propre à chaque organe : le cerveau s'autorégule (varie peu avec le débit
+    // cardiaque), les reins reçoivent moins en bas débit, les membres moins quand les
+    // artérioles se resserrent (HTA, baroréflexe).
+    const dcRel = clamp(r.dc / DC_N, 0.25, 2.5);
+    const organF =
+      loop.id === 'cerveau'
+        ? clamp(Math.sqrt(dcRel), 0.75, 1.25) / dcRel
+        : loop.id === 'rein' || loop.id === 'reinG'
+          ? clamp(1 - 0.55 * r.debitBas, 0.35, 1)
+          : loop.pulm
+            ? 1
+            : clamp(1 / Math.sqrt(r.resist), 0.7, 1.25);
+    drawLoop(c, state.flow, i, loop, n, dt, blocked ? 0 : spd * organF, art, 2.6);
   });
 
   // Beating heart icon in thorax (dilated & weaker beat if LV/RV weak, amber ring if stenotic)

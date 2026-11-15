@@ -456,19 +456,27 @@ export function drawCoeur({
   if (r.ivcBlock) drawThrombus(215, 520, 15);
 
   // Blood particles along all routes including BOTH pulmonary artery branches
+  // Débit pulsatile, cohérent avec la 3D : le sang ne franchit une valve que lorsqu'elle
+  // est ouverte (remplissage en diastole, éjection en systole), freiné si elle est rétrécie.
   const fSpd = 120 * clamp(r.dc / DC_N, 0.25, 2.4);
+  const stenF = (id: 'tricuspide' | 'pulmonaire' | 'mitrale' | 'aortique', k: number) =>
+    actOf(id, p) === 'stenose' || (id === 'aortique' && r.surfAo < 1.5) ? k : 1;
+  const fTri = 0.45 + 1.0 * va.tricuspide * stenF('tricuspide', 0.45);
+  const fPul = 0.12 + 2.0 * va.pulmonaire * stenF('pulmonaire', 0.5);
+  const fMit = 0.45 + 1.0 * va.mitrale * stenF('mitrale', 0.45);
+  const fAo = 0.25 + 1.8 * va.aortique * stenF('aortique', 0.55);
   const fRoutes: { pts: Point2D[]; n: number; col: string; spd: number }[] = [
-    { pts: [[294, 40], [298, 220], [340, 310]], n: 5, col: '#93c5fd', spd: r.ivcBlock ? 0 : fSpd },
-    { pts: [[214, 720], [220, 420], [285, 310]], n: 6, col: '#93c5fd', spd: r.ivcBlock ? 0 : fSpd },
-    { pts: [[370, 340], [410, 450], [472, 315], [474, 180]], n: 6, col: '#93c5fd', spd: r.pulmEmb ? 0 : fSpd },
-    { pts: [[474, 180], [380, 168], [280, 160], [175, 170]], n: 4, col: '#93c5fd', spd: r.pulmEmb ? 0 : fSpd },
-    { pts: [[474, 180], [560, 140], [690, 128], [795, 150]], n: 4, col: '#93c5fd', spd: r.pulmEmb ? 0 : fSpd },
-    { pts: [[920, 210], [740, 238], [645, 310]], n: 5, col: '#fca5a5', spd: fSpd },
+    { pts: [[294, 40], [298, 220], [340, 310]], n: 5, col: '#93c5fd', spd: r.ivcBlock ? 0 : fSpd * fTri },
+    { pts: [[214, 720], [220, 420], [285, 310]], n: 6, col: '#93c5fd', spd: r.ivcBlock ? 0 : fSpd * fTri },
+    { pts: [[370, 340], [410, 450], [472, 315], [474, 180]], n: 6, col: '#93c5fd', spd: r.pulmEmb ? 0 : fSpd * fPul },
+    { pts: [[474, 180], [380, 168], [280, 160], [175, 170]], n: 4, col: '#93c5fd', spd: r.pulmEmb ? 0 : fSpd * fPul },
+    { pts: [[474, 180], [560, 140], [690, 128], [795, 150]], n: 4, col: '#93c5fd', spd: r.pulmEmb ? 0 : fSpd * fPul },
+    { pts: [[920, 210], [740, 238], [645, 310]], n: 5, col: '#fca5a5', spd: fSpd * fMit },
     {
       pts: [[635, 345], [640, 480], [540, 360], [528, 180], [575, 62], [700, 46], [820, 120], [846, 360], [846, 720]],
       n: 12,
       col: '#fca5a5',
-      spd: fSpd,
+      spd: fSpd * fAo,
     },
   ];
 
