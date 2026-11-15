@@ -79,7 +79,7 @@ export const CLINICAL_CASES: ClinicalCaseDef[] = [
     tabDefaut: 'corps',
     patient: 'M. Diallo, 58 ans · HTA traitée par Amlodipine 10 mg seule',
     motif: 'Pression artérielle toujours au-dessus de la cible (≈ 140/92 mmHg) et chevilles très gonflées en fin de journée.',
-    objectif: 'Normaliser la PA (< 138/86 mmHg) tout en faisant régresser l’œdème des chevilles et en préservant le rein.',
+    objectif: 'Normaliser la PA (< 138/88 mmHg) tout en faisant régresser l’œdème des chevilles et en préservant le rein.',
     indices: [
       'L’amlodipine seule dilate surtout l’artériole en amont : le sang pousse dans les capillaires de la cheville.',
       'Associer un IEC (Amloperin®) dilate aussi la veinule de sortie et réduit l’œdème d’environ 38 %.',

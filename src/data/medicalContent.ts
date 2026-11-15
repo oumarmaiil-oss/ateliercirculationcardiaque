@@ -593,13 +593,13 @@ export const EX: Record<TabId, ExampleItem[]> = {
     },
     {
       id: 'hta-asso',
-      t: 'HTA + Amloperin® 5/5 (bithérapie)',
+      t: 'HTA + Amloperin® (amlo 5 + péri 5)',
       w: 'Amlodipine + Périndopril : baisse de PA additive et œdème des chevilles moins fréquent (≈ −38 %).',
       p: { mal: ['hta'], asso: 'amlo-peri', hvg: 0.5 },
     },
     {
       id: 'hta-asso-10',
-      t: 'HTA + Amloperin® 10/10 (pleine dose)',
+      t: 'HTA + Amloperin® (amlo 10 + péri 10)',
       w: 'Effet maximal sur la PA · à comparer avec amlodipine 10 mg seule.',
       p: { mal: ['hta'], asso: 'amlo-peri', pres: { 'amlo-peri': '10-10' }, hvg: 0.5 },
     },
@@ -611,7 +611,7 @@ export const EX: Record<TabId, ExampleItem[]> = {
     },
     {
       id: 'hta-tri-max',
-      t: 'HTA résistante + Tensoplus® 10/2,5/10',
+      t: 'HTA résistante + Tensoplus® (pleine dose)',
       w: 'Trithérapie pleine dose : contrôle renforcé de la postcharge et du sel.',
       p: { mal: ['hta'], resist: 1.25, asso: 'peri-inda-amlo', pres: { 'peri-inda-amlo': '10-2.5-10' }, hvg: 0.65 },
     },
@@ -638,8 +638,8 @@ export const EX: Record<TabId, ExampleItem[]> = {
     { grp: 'Le cycle cardiaque', id: 'sain', t: 'Cœur normal, 70 batt/min', w: 'Onde P, QRS, T ; B1 et B2.', p: {} },
     {
       id: 'lent',
-      t: 'Au ralenti (×0,25)',
-      w: 'Pour voir chaque valve s’ouvrir et se fermer.',
+      t: 'Observer les valves au ralenti',
+      w: 'Vitesse ×0,25 : chaque valve s’ouvre et se ferme, B1 puis B2.',
       p: {},
       speed: 0.25,
     },

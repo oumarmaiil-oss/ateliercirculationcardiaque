@@ -9,7 +9,7 @@ Simulateur pédagogique et interactif de physiologie, physiopathologie et pharma
 - **Ouvrir l’application en ligne** : https://oumarmaiil-oss.github.io/ateliercirculationcardiaque/
 - **Mode Cas cliniques (« Pathologies à soigner »)** : https://oumarmaiil-oss.github.io/ateliercirculationcardiaque/?mode=cas
 - **Environnement de développement local** : `http://localhost:3000`
-- **Signaler une erreur ou suggérer une amélioration** : [Contacter Dr Oumar Sow](https://wa.me/221772030979)
+- **Signaler une erreur ou suggérer une amélioration** : bouton « Signaler » dans l’atelier, ou WhatsApp [@drSOWOUMAR](https://wa.me/drSOWOUMAR)
 
 ---
 
@@ -19,6 +19,13 @@ Simulateur pédagogique et interactif de physiologie, physiopathologie et pharma
 - **1 · Corps entier** : circulation systémique et pulmonaire, retour veineux, cibles d’organes (cerveau, cœur, reins, membres inférieurs), œdèmes périphériques et migration embolique.
 - **2 · Cœur (2D & 3D WebGL)** : contraction auriculaire et ventriculaire synchrone, ouverture/fermeture des 4 valves, tissu nodal électrique (cyan, niveaux *Comprendre* et *Expert*), territoires coronaires (IVA, Cx, CD), diagramme de Wiggers et boucle Pression–Volume.
 - **3 · Vaisseau en coupe (2D & 3D)** : endothélium, libération de NO, média élastique, progression de la plaque d’athérome (stades 0 à 6) et rupture avec thrombus occlusif.
+
+### Nouveautés pour le lancement
+- **Quiz d’auscultation** (bouton « Quiz ») : 6 sons tirés au hasard parmi 8 (normal, RA, IM, IA, RM, B3, B4, FA), choix du foyer, indice, explication sémiologique et score.
+- **Visite guidée** en 5 étapes au premier lancement (relançable depuis le pied de page).
+- **Installable et utilisable hors connexion** : sur téléphone, « Ajouter à l’écran d’accueil » ; tout l’atelier, 3D comprise, reste disponible sans réseau après une première visite.
+- **Qualité d’affichage adaptative** (Complet / Équilibré / Léger) selon l’appareil, avec réglage manuel.
+- **Signalement d’erreur** (bouton « Signaler ») : message WhatsApp pré-rempli avec la scène et les constantes, vers @drSOWOUMAR, sans afficher de numéro.
 
 ### 2. Deux modes complémentaires
 - **Exploration libre** : démarre dans un état physiologique normal (`120/80 mmHg`, `FC 70/min`, `0` pathologie active) puis permet d’explorer des exemples rapides ou de combiner maladies, valves et traitements à la demande.

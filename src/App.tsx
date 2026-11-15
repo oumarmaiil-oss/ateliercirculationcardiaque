@@ -20,6 +20,7 @@ import {
   VolumeX,
   X,
   Stethoscope,
+  MessageCircleWarning,
 } from 'lucide-react';
 import {
   FOYERS,
@@ -35,6 +36,9 @@ import { ControlPanel } from './components/ControlPanel';
 import { ShortcutsModal, SourcesModal, WelcomeModal } from './components/InfoModals';
 import { ConsequenceTimelineDock, MissionBriefCard } from './components/MissionWorkspace';
 import { SceneLesionPopover } from './components/SceneLesionPopover';
+import { ReportModal } from './components/ReportModal';
+import { GuidedTour } from './components/GuidedTour';
+import { AuscultationQuiz } from './components/AuscultationQuiz';
 import { ACT_LBL, COMP, EX, SITES, actsFor, explain, nowHTML } from './data/medicalContent';
 import {
   beat,
@@ -89,6 +93,8 @@ import type {
   TimelineBranch,
   TimelineHorizon,
   TraitementId,
+  MaladieId,
+  PresetConfig,
   ValveId,
   VesselSiteId,
   ViewLevel,
@@ -305,6 +311,10 @@ export default function App() {
   });
   const [showKeys, setShowKeys] = useState<boolean>(false);
   const [showSources, setShowSources] = useState<boolean>(false);
+  const [showReport, setShowReport] = useState<boolean>(false);
+  const [showTour, setShowTour] = useState<boolean>(false);
+  const [showQuiz, setShowQuiz] = useState<boolean>(false);
+  const quizSnapshotRef = useRef<{ params: SimParams; hvg: number; tab: TabId; speed: number; sound: boolean } | null>(null);
   const [bannerMsg, setBannerMsg] = useState<string | null>(null);
   const [toastMsg, setToastMsg] = useState<string | null>(null);
 
@@ -372,6 +382,23 @@ export default function App() {
     () => compute(effectiveParams, dynState),
     [effectiveParams, dynState]
   );
+
+  // Contexte joint aux signalements d'erreur (aucune donnée personnelle).
+  const reportContext = useMemo(() => {
+    if (!showReport) return '';
+    const mal = (Object.keys(effectiveParams.mal) as MaladieId[]).filter((k) => effectiveParams.mal[k]);
+    const { t, asso } = activeTrt(effectiveParams);
+    const trt = (Object.keys(t) as TraitementId[]).filter((k) => t[k]);
+    return [
+      `Mode : ${appMode === 'cas' ? `cas clinique « ${activeCase.titre ?? activeCase.id} »` : `exploration (exemple ${activeExId})`}`,
+      `Vue : ${tab}${tab !== 'corps' ? ` ${viewMode.toUpperCase()}` : ''} · niveau ${level} · étape frise ${timelineStep} (${timelineBranch === 'treated' ? 'avec' : 'sans'} traitement)`,
+      `Maladies : ${mal.length ? mal.join(', ') : 'aucune'}`,
+      `Traitements : ${[asso, ...trt].filter(Boolean).join(', ') || 'aucun'}`,
+      `Constantes : FC ${fmt(computed.fcEff)} · PA ${fmt(computed.pas)}/${fmt(computed.pad)} · DC ${fmt(computed.dc, 1)} · FE ${fmt(computed.fe * 100)} % · POG ${fmt(computed.pog)}`,
+      `Appareil : ${window.innerWidth}×${window.innerHeight} · ${navigator.userAgent.replace(/\s*\(KHTML.*$/, '')}`,
+      `Lien : ${window.location.href}`,
+    ].join('\n');
+  }, [showReport, effectiveParams, appMode, activeCase, activeExId, tab, viewMode, level, timelineStep, timelineBranch, computed]);
   const treatedComputed: ComputedResult = useMemo(
     () => compute(params, { hvg: dynHvg }),
     [params, dynHvg]
@@ -450,6 +477,10 @@ export default function App() {
   const vaisseauStateRef = useRef(createVaisseauState());
   const audioRef = useRef(createAudioEngine());
 
+  const rawParamsRef = useRef(params);
+  rawParamsRef.current = params;
+  const rawHvgRef = useRef(dynHvg);
+  rawHvgRef.current = dynHvg;
   const paramsRef = useRef(effectiveParams);
   paramsRef.current = effectiveParams;
   const dynRef = useRef(dynState);
@@ -725,9 +756,18 @@ export default function App() {
           const rc = el.getBoundingClientRect();
           return rc.bottom > 0 && rc.top < window.innerHeight && rc.width > 0;
         };
-        stageVisible = onScreen(canvas2dRef.current) || onScreen(stage3dRef.current);
-        chartVisible = onScreen(chartCanvasRef.current);
-        pvVisible = onScreen(pvCanvasRef.current);
+        const sv = onScreen(canvas2dRef.current) || onScreen(stage3dRef.current);
+        const cvv = onScreen(chartCanvasRef.current);
+        const pvv = onScreen(pvCanvasRef.current);
+        // Une zone qui réapparaît à l'écran est redessinée même en pause.
+        if ((sv && !stageVisible) || (cvv && !chartVisible) || (pvv && !pvVisible)) {
+          need2DRenderRef.current = true;
+          if (heart3dInstRef.current) heart3dInstRef.current.viewport.needRender = true;
+          if (vessel3dInstRef.current) vessel3dInstRef.current.viewport.needRender = true;
+        }
+        stageVisible = sv;
+        chartVisible = cvv;
+        pvVisible = pvv;
       }
 
       // Cadence de dessin plafonnée (profil Léger : 30 i/s). L'horloge et le son
@@ -793,7 +833,7 @@ export default function App() {
         }
       }
 
-      sndTick(audioRef.current, clk, p, targetR, soundRef.current);
+      sndTick(audioRef.current, clk, p, targetR, soundRef.current, d.hvg);
 
       const shouldDraw2D =
         drawSlot &&
@@ -1082,6 +1122,52 @@ export default function App() {
   const handleFoyer = useCallback((f: FoyerId) => {
     setFoyerState(f);
     setFoyer(audioRef.current, f);
+  }, []);
+
+  const enableSound = useCallback(() => {
+    initAudio(audioRef.current);
+    soundRef.current = true;
+    setSoundEnabled(true);
+  }, []);
+
+  // Quiz d'auscultation : on mémorise l'état de l'atelier pour le restaurer à la sortie.
+  const handleOpenQuiz = useCallback(() => {
+    quizSnapshotRef.current = {
+      params: rawParamsRef.current,
+      hvg: rawHvgRef.current,
+      tab: tabRef.current,
+      speed: clkRef.current.speed,
+      sound: soundRef.current,
+    };
+    enableSound(); // dans le geste de l'utilisateur (exigence iOS/Android)
+    setStoryPlaying(false);
+    setCompareUntreated(false);
+    setTimelineStep(0);
+    setPlaying(true);
+    setSpeed(1);
+    setShowQuiz(true);
+  }, [enableSound]);
+
+  const handleQuizLoad = useCallback((preset: PresetConfig) => {
+    const { params: np, d } = applyPresetToParams(preset);
+    setParams(np);
+    setDynHvg(d.hvg);
+    need2DRenderRef.current = true;
+  }, []);
+
+  const handleCloseQuiz = useCallback(() => {
+    setShowQuiz(false);
+    const snap = quizSnapshotRef.current;
+    if (snap) {
+      setParams(snap.params);
+      setDynHvg(snap.hvg);
+      setSpeed(snap.speed);
+      if (!snap.sound) {
+        soundRef.current = false;
+        setSoundEnabled(false);
+      }
+    }
+    quizSnapshotRef.current = null;
   }, []);
 
   const handleStepFrame = useCallback((dir: -1 | 1) => {
@@ -1663,7 +1749,7 @@ export default function App() {
             </div>
           </div>
 
-          <div className="flex flex-wrap items-center gap-1.5">
+          <div className="flex flex-wrap items-center gap-1 sm:gap-1.5">
             {/* Level Switch */}
             <div
               className="flex items-center rounded-lg border border-[var(--line)] bg-[var(--panel)] p-0.5"
@@ -1675,7 +1761,7 @@ export default function App() {
                   key={lvl}
                   type="button"
                   onClick={() => setLevel(lvl)}
-                  className={`rounded-md px-2 py-1 text-[11px] font-semibold transition ${
+                  className={`rounded-md px-1.5 py-1 text-[11px] font-semibold transition sm:px-2 ${
                     level === lvl
                       ? 'bg-[var(--card2)] text-[var(--accent)]'
                       : 'text-[var(--muted)] hover:text-[var(--txt)]'
@@ -1691,7 +1777,7 @@ export default function App() {
               type="button"
               onClick={() => setShowLabels((v) => !v)}
               title="Afficher/masquer les repères (L)"
-              className={`inline-flex items-center gap-1 rounded-lg border px-2.5 py-1.5 text-[11px] font-semibold transition ${
+              className={`inline-flex items-center gap-1 rounded-lg border px-2 py-1.5 text-[11px] sm:px-2.5 font-semibold transition ${
                 showLabels
                   ? 'border-sky-400/45 bg-sky-500/15 text-sky-200'
                   : 'border-[var(--line)] bg-[var(--card)] text-[var(--muted)]'
@@ -1705,20 +1791,10 @@ export default function App() {
               type="button"
               onClick={handleShare}
               title="Copier le lien vers ce scénario"
-              className="inline-flex items-center gap-1 rounded-lg border border-[var(--line)] bg-[var(--card)] px-2.5 py-1.5 text-[11px] font-semibold text-[var(--muted)] hover:text-[var(--txt)]"
+              className="inline-flex items-center gap-1 rounded-lg border border-[var(--line)] bg-[var(--card)] px-2 py-1.5 text-[11px] sm:px-2.5 font-semibold text-[var(--muted)] hover:text-[var(--txt)]"
             >
               <Share2 className="h-3.5 w-3.5" />
               <span className="hidden md:inline">Partager</span>
-            </button>
-
-            <button
-              type="button"
-              onClick={handleCapturePng}
-              title="Enregistrer une image PNG de la scène"
-              className="hidden sm:inline-flex items-center gap-1 rounded-lg border border-[var(--line)] bg-[var(--card)] px-2.5 py-1.5 text-[11px] font-semibold text-[var(--muted)] hover:text-[var(--txt)]"
-            >
-              <Camera className="h-3.5 w-3.5" />
-              <span className="hidden md:inline">PNG</span>
             </button>
 
             <button
@@ -1739,6 +1815,17 @@ export default function App() {
               <HelpCircle className="h-3.5 w-3.5" />
               <span className="hidden sm:inline">Sources</span>
             </button>
+
+            <button
+              type="button"
+              onClick={() => setShowReport(true)}
+              aria-label="Signaler une erreur"
+              title="Signaler une erreur (WhatsApp)"
+              className="inline-flex items-center gap-1 rounded-lg border border-emerald-400/40 bg-emerald-500/10 px-2 py-1.5 text-[11px] font-semibold text-emerald-200 hover:bg-emerald-500/20"
+            >
+              <MessageCircleWarning className="h-3.5 w-3.5" />
+              <span className="hidden md:inline">Signaler</span>
+            </button>
           </div>
         </div>
       </header>
@@ -1749,6 +1836,7 @@ export default function App() {
           <div className="flex flex-wrap items-center gap-2">
             {/* App Mode Switch: Pathologies à soigner vs Exploration libre */}
             <div
+              data-tour="modes"
               className="flex items-center rounded-lg border border-[var(--line2)] bg-[var(--bg)] p-0.5"
               role="group"
               aria-label="Mode de travail"
@@ -1762,7 +1850,8 @@ export default function App() {
                     : 'text-[var(--muted)] hover:text-[var(--txt)]'
                 }`}
               >
-                Pathologies à soigner
+                <span className="sm:hidden">Cas cliniques</span>
+                <span className="hidden sm:inline">Pathologies à soigner</span>
               </button>
               <button
                 type="button"
@@ -1773,11 +1862,22 @@ export default function App() {
                     : 'text-[var(--muted)] hover:text-[var(--txt)]'
                 }`}
               >
-                Exploration libre
+                <span className="sm:hidden">Exploration</span>
+                <span className="hidden sm:inline">Exploration libre</span>
               </button>
             </div>
 
-            <nav className="flex flex-wrap gap-1" aria-label="Échelle d'observation">
+            <button
+              type="button"
+              onClick={handleOpenQuiz}
+              title="Quiz d’auscultation : reconnaître les bruits et souffles"
+              className="inline-flex items-center gap-1 rounded-lg border border-amber-400/50 bg-amber-500/10 px-2.5 py-1 text-[11.5px] font-bold text-amber-100 hover:bg-amber-500/20 whitespace-nowrap"
+            >
+              <Stethoscope className="h-3.5 w-3.5" />
+              <span>Quiz</span>
+            </button>
+
+            <nav data-tour="echelles" className="flex flex-wrap gap-1" aria-label="Échelle d'observation">
               {(
                 [
                   { id: 'corps', lbl: '1 · Corps entier' },
@@ -1823,6 +1923,7 @@ export default function App() {
 
         {/* Mobile/Tablet switcher so canvas stays immediately accessible */}
         <div
+          data-tour="panneau"
           className={`mt-1.5 grid gap-1 lg:hidden ${
             appMode === 'libre' ? 'grid-cols-3' : 'grid-cols-2'
           }`}
@@ -1865,6 +1966,7 @@ export default function App() {
       >
         {/* Left Control Panel */}
         <div
+          data-tour="panneau"
           className={
             mobileSheet === 'scene'
               ? sidebarOpen
@@ -2049,7 +2151,7 @@ export default function App() {
             ref={stageWrapRef}
             className="relative flex flex-col overflow-hidden rounded-xl border border-[var(--line)] bg-[var(--panel)]"
           >
-            <div className="stage-grid-bg relative h-[clamp(250px,min(60svh,calc((100vw_-_26px)*0.8)),460px)] sm:h-[clamp(360px,min(58svh,calc((100vw_-_26px)*0.74)),540px)] lg:h-[clamp(440px,58vh,640px)] w-full flex items-center justify-center overflow-hidden">
+            <div data-tour="scene" className="stage-grid-bg relative h-[clamp(250px,min(60svh,calc((100vw_-_26px)*0.8)),460px)] sm:h-[clamp(360px,min(58svh,calc((100vw_-_26px)*0.74)),540px)] lg:h-[clamp(440px,58vh,640px)] w-full flex items-center justify-center overflow-hidden">
               {(tab === 'corps' || viewMode === '2d') && (
                 <canvas
                   ref={canvas2dRef}
@@ -2446,7 +2548,7 @@ export default function App() {
             )}
 
             {/* Transport & Readout Bar */}
-            <div className="flex flex-wrap items-center justify-between gap-2 border-t border-[var(--line)] bg-[var(--panel)] px-3 py-2">
+            <div data-tour="transport" className="flex flex-wrap items-center justify-between gap-2 border-t border-[var(--line)] bg-[var(--panel)] px-3 py-2">
               <div className="flex flex-wrap items-center gap-1.5">
                 {tab !== 'corps' && (
                   <div
@@ -2554,6 +2656,7 @@ export default function App() {
                   <button
                     type="button"
                     onClick={() => setCompareUntreated((v) => !v)}
+                    title="Montre instantanément le même patient si on retirait tous ses médicaments (l’évolution dans le temps se voit dans la frise)"
                     className={`inline-flex items-center gap-1 rounded-lg border px-2.5 py-1 text-[11px] font-semibold transition whitespace-nowrap ${
                       compareUntreated
                         ? 'border-amber-400/70 bg-amber-500/25 text-amber-100'
@@ -2561,7 +2664,7 @@ export default function App() {
                     }`}
                   >
                     <Eye className="h-3 w-3" />
-                    <span>{compareUntreated ? 'Vue : Sans traitement' : 'Comparer sans trt'}</span>
+                    <span>{compareUntreated ? 'Aperçu sans médicament : ON' : 'Aperçu sans médicament'}</span>
                   </button>
                 )}
 
@@ -2713,30 +2816,6 @@ export default function App() {
                       ))}
                     </div>
 
-                    <div className="flex items-center gap-1 text-[11px] shrink-0">
-                      <button
-                        type="button"
-                        onClick={() => handleChangeTimelineBranch('untreated')}
-                        className={`rounded-md border px-2 py-1 font-semibold whitespace-nowrap ${
-                          timelineBranch === 'untreated'
-                            ? 'border-red-400/60 bg-red-500/20 text-red-100'
-                            : 'border-[var(--line)] bg-[var(--card)] text-[var(--muted)] hover:text-[var(--txt)]'
-                        }`}
-                      >
-                        Voir sans traitement
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => handleChangeTimelineBranch('treated')}
-                        className={`rounded-md border px-2 py-1 font-semibold whitespace-nowrap ${
-                          timelineBranch === 'treated'
-                            ? 'border-emerald-400/60 bg-emerald-500/20 text-emerald-100'
-                            : 'border-[var(--line)] bg-[var(--card)] text-[var(--muted)] hover:text-[var(--txt)]'
-                        }`}
-                      >
-                        Voir avec traitement
-                      </button>
-                    </div>
                   </div>
                 </div>
               )}
@@ -2775,8 +2854,18 @@ export default function App() {
                 </div>
               )}
 
-              {tab === 'corps' ? (
+              {tab === 'corps' || level === 1 ? (
                 <>
+                  {tab !== 'corps' && (
+                    <button
+                      type="button"
+                      onClick={() => setLevel(2)}
+                      className="w-full rounded-lg border border-sky-400/40 bg-sky-500/10 px-3 py-2 text-left text-[12px] text-sky-100 hover:bg-sky-500/20"
+                    >
+                      Passez au niveau <strong>Comprendre</strong> pour afficher les courbes de pression
+                      (diagramme de Wiggers) et la boucle pression-volume →
+                    </button>
+                  )}
                   <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
                     <div className="rounded-lg border border-[var(--line)] bg-[var(--card)] p-2.5">
                       <div className="text-[11px] text-[var(--muted)]">Pression artérielle</div>
@@ -2942,19 +3031,25 @@ export default function App() {
           <div className="flex items-center gap-3">
             <button
               type="button"
+              onClick={() => setShowTour(true)}
+              className="hover:text-[var(--txt)] underline-offset-2 hover:underline"
+            >
+              Visite guidée
+            </button>
+            <button
+              type="button"
               onClick={() => setShowSources(true)}
               className="hover:text-[var(--txt)] underline-offset-2 hover:underline"
             >
               Sources & limites
             </button>
-            <a
-              href="https://wa.me/221772030979?text=Bonjour%20Dr%20Oumar%20Sow%2C%20j%E2%80%99ai%20rep%C3%A9r%C3%A9%20une%20erreur%20dans%20L%E2%80%99Atelier%20du%20C%C5%93ur%20%3A%20"
-              target="_blank"
-              rel="noopener noreferrer"
+            <button
+              type="button"
+              onClick={() => setShowReport(true)}
               className="text-emerald-300/90 hover:text-emerald-200 underline-offset-2 hover:underline"
             >
               Signaler une erreur
-            </a>
+            </button>
           </div>
         </div>
       </footer>
@@ -2976,14 +3071,36 @@ export default function App() {
           setShowWelcome(false);
           try {
             sessionStorage.setItem('atelierCoeurSeen', '1');
+            // Visite guidée proposée une seule fois par appareil.
+            if (localStorage.getItem('atelierCoeurTour') !== '1') {
+              localStorage.setItem('atelierCoeurTour', '1');
+              window.setTimeout(() => setShowTour(true), 350);
+            }
           } catch {
             // ignore
           }
         }}
       />
+      <GuidedTour
+        open={showTour}
+        onClose={() => {
+          setShowTour(false);
+          setMobileSheet('scene');
+        }}
+      />
 
       <ShortcutsModal open={showKeys} onClose={() => setShowKeys(false)} />
       <SourcesModal open={showSources} onClose={() => setShowSources(false)} />
+      <AuscultationQuiz
+        open={showQuiz}
+        onClose={handleCloseQuiz}
+        onLoad={handleQuizLoad}
+        foyer={foyer}
+        onFoyer={handleFoyer}
+        soundEnabled={soundEnabled}
+        onEnableSound={enableSound}
+      />
+      <ReportModal open={showReport} onClose={() => setShowReport(false)} context={reportContext} />
 
       {toastMsg && (
         <div

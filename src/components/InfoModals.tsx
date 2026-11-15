@@ -181,7 +181,7 @@ export const SourcesModal: React.FC<SourcesModalProps> = ({ open, onClose }) => 
           </div>
           <div className="pt-1">
             <a
-              href="https://wa.me/221772030979?text=Bonjour%20Dr%20Oumar%20Sow%2C%20j%E2%80%99ai%20rep%C3%A9r%C3%A9%20une%20erreur%20dans%20L%E2%80%99Atelier%20du%20C%C5%93ur%20%3A%20"
+              href="https://wa.me/drSOWOUMAR"
               target="_blank"
               rel="noopener noreferrer"
               className="inline-flex items-center rounded-lg border border-emerald-400/40 bg-emerald-500/15 px-3 py-1.5 text-[12px] font-semibold text-emerald-200 hover:bg-emerald-500/25"
