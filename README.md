@@ -1,5 +1,7 @@
 # L’Atelier du Cœur et de la Circulation
 
+> **Nouvelle version : [Hémodyssée](https://oumarmaiil-oss.github.io/hemodyssee/)** ([dépôt](https://github.com/oumarmaiil-oss/hemodyssee)) — le voyage du sang, plus simple et plus complet. Cet atelier reste en ligne comme version « labo » de référence.
+
 Simulateur pédagogique et interactif de physiologie, physiopathologie et pharmacologie cardiovasculaire, conçu à trois échelles complémentaires : **Corps entier**, **Cœur (2D & 3D)** et **Vaisseau en coupe (2D & 3D)**.
 
 ---
@@ -108,5 +110,5 @@ Ce simulateur s’appuie sur les principes classiques de physiologie cardiovascu
 
 ## Auteur & Licence
 
-Conçu et développé par **Dr Oumar Sow**.  
+Conçu et développé par **Dr O. Sow**.  
 Publié en open source sous **Licence MIT**.
