@@ -7,6 +7,7 @@ import {
 } from './clinicalCases';
 import { applyPresetToParams, compute, freshP } from './physiology';
 import { clkExtend, createClock, ecg, samplePVLoop } from './clock';
+import { getTreatmentProtocol, mergeProtocolOnParams } from './protocols';
 
 test('Effort augmente fortement le gradient RA et la POG sur VG affaibli', () => {
   const raRest = applyPresetToParams({ mal: ['ra'] });
@@ -122,4 +123,14 @@ test('Timeline des conséquences projette aggravation non traitée et stabilisat
   const faBase = applyPresetToParams(c5.preset);
   const faUntreated5y = projectTimelineState(faBase.params, faBase.d.hvg, c5, 4, 'untreated');
   assert.equal(faUntreated5y.params.mal.avc, true, 'FA non anticoagulée à 5 ans expose à un AVC');
+});
+
+test('Cas infarctus : le protocole réussit sans hypotension (PAS ≥ 90)', () => {
+  const c = CLINICAL_CASES.find((x) => x.id === 'idm-plaque')!;
+  const base = applyPresetToParams(c.preset);
+  const prot = getTreatmentProtocol(base.params, 'cas', c)!;
+  const p = mergeProtocolOnParams(base.params, prot.presetPatch);
+  const r = compute(p, base.d);
+  assert.ok(r.pas >= 90, `PAS ${r.pas}`);
+  assert.equal(evaluateCaseTreatment(c, p, base.d, r, null).verdict, 'succes');
 });

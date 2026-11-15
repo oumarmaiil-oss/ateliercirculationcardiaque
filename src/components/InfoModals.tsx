@@ -175,8 +175,10 @@ export const SourcesModal: React.FC<SourcesModalProps> = ({ open, onClose }) => 
             </div>
             <p>
               Ce modèle compartimental en régime stationnaire simplifie l’interaction cœur-poumons,
-              les réflexes barorécepteurs à court terme, les valvulopathies droites isolées et les
-              traitements d’urgence (angioplastie, thrombolyse, choc).
+              les valvulopathies droites isolées et les traitements d’urgence (angioplastie,
+              thrombolyse, choc). Le baroréflexe est représenté de façon simplifiée : une baisse de
+              pression accélère le cœur et resserre les artérioles, ce qui ne compense qu’une partie
+              de la chute (freiné par les bêtabloquants, impossible en bloc complet).
             </p>
           </div>
           <div className="pt-1">

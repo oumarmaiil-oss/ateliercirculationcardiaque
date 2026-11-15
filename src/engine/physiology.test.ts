@@ -128,3 +128,18 @@ test('ventricules affaiblis et valves obstruées reproduisent congestion, baisse
   assert.ok(rRm.pog > rBase.pog + 5, 'Rétrécissement mitral doit faire monter POG');
 });
 
+
+test('baroréflexe : une baisse de pression accélère le cœur, mais pas en bloc complet', () => {
+  const im = applyPresetToParams({ mal: ['im'] });
+  const rIm = compute(im.params, im.d);
+  assert.ok(rIm.fcEff > 72, `FC attendue > 72 en IM, reçu ${rIm.fcEff}`);
+  assert.ok(rIm.pas >= 92, `PAS attendue ≥ 92 en IM compensée, reçu ${rIm.pas}`);
+  const bav = applyPresetToParams({ fail: 'nav', act: { vg: 'faible' } });
+  const rBav = compute(bav.params, bav.d);
+  assert.ok(rBav.fcEff <= 41, `FC d’échappement fixe attendue, reçu ${rBav.fcEff}`);
+});
+
+test('baroréflexe sans effet chez le sujet sain (120/80 conservé)', () => {
+  const r = compute(freshP(), { hvg: 0 });
+  assert.equal(Math.round(r.fcEff), 70);
+});

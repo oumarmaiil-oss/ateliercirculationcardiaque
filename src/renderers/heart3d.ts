@@ -20,6 +20,7 @@ import type {
 } from '../engine/types';
 import {
   createTissueBumpTexture,
+  createTissueColorTexture,
   make3D,
   makeTextSprite,
   type ThreeViewport,
@@ -65,6 +66,7 @@ export function createHeart3D(
   });
 
   const bump = createTissueBumpTexture();
+  const tissue = createTissueColorTexture();
   const clipArr = [vp.clipPlane];
 
   const matMyo = new THREE.MeshPhysicalMaterial({
@@ -73,8 +75,9 @@ export function createHeart3D(
     metalness: 0.02,
     clearcoat: 0.35,
     clearcoatRoughness: 0.4,
+    map: tissue,
     bumpMap: bump,
-    bumpScale: 0.02,
+    bumpScale: 0.028,
     side: THREE.DoubleSide,
     clippingPlanes: [],
   });

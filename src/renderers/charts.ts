@@ -71,6 +71,42 @@ export function drawWiggers(
     c.fillText(String(v), 6, y + 3);
   });
 
+  // Bandes systole (B1 → B2) et repères verticaux B1/B2 traversant pressions et ECG :
+  // B1 = la pression VG dépasse l'OG (fermeture mitrale), B2 = elle repasse sous l'aorte.
+  {
+    const iv0 = lastBefore(clk.vEv, t0);
+    for (let i = Math.max(0, iv0); i < clk.vEv.length; i++) {
+      const e = clk.vEv[i];
+      if (e.t > t1) break;
+      const b = beat(clk, r, e.t + 0.001);
+      const xs = Math.max(ml, tx(b.sys));
+      const xe = Math.min(W - mr, tx(b.ej1));
+      if (xe > xs) {
+        c.fillStyle = 'rgba(232,121,249,0.12)';
+        c.fillRect(xs, mt, xe - xs, H - mb - mt);
+      }
+      c.save();
+      c.setLineDash([3, 3]);
+      c.lineWidth = 1;
+      [
+        [b.sys, 'rgba(251,191,36,0.55)'],
+        [b.ej1, 'rgba(125,211,252,0.55)'],
+      ].forEach(([tt, col]) => {
+        const x = tx(tt as number);
+        if (x < ml || x > W - mr) return;
+        c.strokeStyle = col as string;
+        c.beginPath();
+        c.moveTo(x, mt);
+        c.lineTo(x, H - mb);
+        c.stroke();
+      });
+      c.restore();
+    }
+    c.fillStyle = 'rgba(232,121,249,0.55)';
+    c.font = '9px "Plus Jakarta Sans", system-ui, sans-serif';
+    c.fillText('bande rose = systole', W - mr - 98, mt + 11);
+  }
+
   const N = 160;
   const pAo: [number, number][] = [];
   const pLv: [number, number][] = [];
